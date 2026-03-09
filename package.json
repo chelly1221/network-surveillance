@@ -1,0 +1,39 @@
+{
+  "name": "pingtester",
+  "version": "1.0.0",
+  "description": "김포공항 레이더/관제송신소 네트워크 감시 프로그램",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.pingtester.app",
+    "productName": "PingTester",
+    "win": {
+      "target": "portable",
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "PingTester.exe"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/failed.wav",
+        "to": "failed.wav"
+      }
+    ]
+  }
+}
