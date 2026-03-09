@@ -73,4 +73,4 @@ npm run build            # Windows portable exe 빌드 (dist/PingTester-{version
 7. **설정 저장**: JSON 파일로 영속 저장 (저장 실패 시 rollback)
 8. **3D 네트워크 뷰**: Three.js 방사형 토폴로지, 실시간 트래픽 시각화
 9. **물리 토폴로지 편집**: 캔버스 기반 장비 배치 및 연결 편집
-10. **패킷 캡처**: Npcap 기반 IPv4 트래픽 모니터링, ASTERIX 프로토콜 감지
+10. **패킷 캡처**: Npcap 기반 IPv4 트래픽 모니터링, 다중 어댑터 동시 캡처, ASTERIX 프로토콜 감지

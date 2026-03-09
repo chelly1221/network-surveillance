@@ -33,7 +33,7 @@ let pingGeneration = 0;
 let targetStatus = {};
 let settings = {};
 let activeChildProcesses = [];
-let captureSession = null;
+let captureSessions = [];
 let trafficStats = {};
 let interNodeStats = {};
 let discoveredStats = {};
@@ -116,6 +116,7 @@ function loadSettings() {
     sound_file: '',
     mute_state: false,
     capture_device: '',
+    capture_devices: [],
     capture_mode: 'all',
     topology: null
   };
@@ -153,6 +154,7 @@ function loadSettings() {
       if (typeof settings.sound_enabled !== 'boolean') settings.sound_enabled = defaults.sound_enabled;
       if (settings.udp_ip && typeof settings.udp_ip === 'string' && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(settings.udp_ip)) settings.udp_ip = defaults.udp_ip;
       if (settings.capture_mode && settings.capture_mode !== 'all') settings.capture_mode = defaults.capture_mode;
+      if (!Array.isArray(settings.capture_devices)) settings.capture_devices = defaults.capture_devices;
     } else {
       settings = { ...defaults };
     }
@@ -317,307 +319,316 @@ function detectNetworkInterface() {
   return null;
 }
 
+function getSelectedDevices() {
+  // Build list of enabled device names from settings
+  const captureDevices = settings.capture_devices || [];
+  const enabled = captureDevices.filter(cd => cd && cd.name && cd.enabled !== false).map(cd => cd.name);
+  // Legacy single device support
+  if (enabled.length === 0 && settings.capture_device) {
+    enabled.push(settings.capture_device);
+  }
+  return enabled;
+}
+
+function resolveDeviceInfos(selectedNames) {
+  try {
+    const devices = Cap.deviceList();
+    const infos = [];
+    for (const name of selectedNames) {
+      const dev = devices.find(d => d.name === name);
+      if (!dev) continue;
+      const addr = dev.addresses.find(a => a.addr && a.addr !== '127.0.0.1' && a.addr.includes('.'));
+      const allAddrs = dev.addresses
+        .filter(a => a.addr && a.addr !== '127.0.0.1' && a.addr.includes('.'))
+        .map(a => a.addr);
+      if (addr) infos.push({ device: dev.name, ip: addr.addr, allIps: allAddrs });
+    }
+    return infos;
+  } catch (e) {
+    console.error('Failed to resolve capture devices:', e);
+    return [];
+  }
+}
+
 function startCapture() {
   if (!npcapAvailable) return;
   stopCapture();
 
-  // Use user-selected device or auto-detect
-  let netInfo;
-  if (settings.capture_device) {
-    try {
-      const devices = Cap.deviceList();
-      const dev = devices.find(d => d.name === settings.capture_device);
-      if (dev) {
-        // Find first IPv4 address on this device
-        const addr = dev.addresses.find(a => a.addr && a.addr !== '127.0.0.1' && a.addr.includes('.'));
-        const allAddrs = dev.addresses
-          .filter(a => a.addr && a.addr !== '127.0.0.1' && a.addr.includes('.'))
-          .map(a => a.addr);
-        netInfo = addr ? { device: dev.name, ip: addr.addr, allIps: allAddrs } : null;
-      }
-    } catch (e) {
-      console.error('Failed to use selected capture device:', e);
-    }
+  // Resolve selected devices or auto-detect
+  const selectedNames = getSelectedDevices();
+  let netInfos = selectedNames.length > 0 ? resolveDeviceInfos(selectedNames) : [];
+  if (netInfos.length === 0) {
+    const auto = detectNetworkInterface();
+    if (auto) netInfos = [auto];
   }
-  if (!netInfo) {
-    netInfo = detectNetworkInterface();
-  }
-  if (!netInfo) {
+  if (netInfos.length === 0) {
     console.log('No suitable network interface found for capture');
     safeSend('capture-error', 'No suitable network interface found for capture');
     return;
   }
-  localIp = netInfo.ip;
-  localIps = new Set(netInfo.allIps || [netInfo.ip]);
+  // Merge all local IPs from all devices
+  localIp = netInfos[0].ip;
+  localIps = new Set();
+  for (const ni of netInfos) {
+    for (const ip of (ni.allIps || [ni.ip])) localIps.add(ip);
+  }
 
   const targets = (settings.targets || []).filter(t => t.name && t.address && t.enabled);
-
   targetIpSet = new Set(targets.map(t => t.address));
 
-  // Always capture all IPv4 traffic
   const filter = 'ip';
 
-  try {
-    const cap = new Cap();
-    const buffer = Buffer.alloc(65535);
-    const linkType = cap.open(netInfo.device, filter, 10 * 1024 * 1024, buffer);
-    if (cap.setMinBytes) cap.setMinBytes(0);
+  // Open capture session for each device
+  for (const netInfo of netInfos) {
+    try {
+      const cap = new Cap();
+      const buffer = Buffer.alloc(65535);
+      const linkType = cap.open(netInfo.device, filter, 10 * 1024 * 1024, buffer);
+      if (cap.setMinBytes) cap.setMinBytes(0);
 
-    cap.on('packet', (nbytes, trunc) => {
-      if (linkType !== 'ETHERNET') return;
-      if (nbytes < 14) return;  // Minimum Ethernet frame size
-      try {
-        let ret = decoders.Ethernet(buffer);
-        let ipv4Offset = ret.offset;
-        let isIPv4 = false;
-        if (ret.info.type === PROTOCOL.ETHERNET.IPV4) {
-          isIPv4 = true;
-        } else if (ret.info.type === 0x8100 && nbytes > ret.offset + 4) {
-          // VLAN tagged frame - check inner EtherType
-          const innerType = buffer.readUInt16BE(ret.offset + 2);
-          if (innerType === 0x0800) {
-            ipv4Offset = ret.offset + 4; // skip VLAN tag
-            if (nbytes < ipv4Offset + 20) return; // Minimum IPv4 header
+      cap.on('packet', (nbytes, trunc) => {
+        if (linkType !== 'ETHERNET') return;
+        if (nbytes < 14) return;
+        try {
+          let ret = decoders.Ethernet(buffer);
+          let ipv4Offset = ret.offset;
+          let isIPv4 = false;
+          if (ret.info.type === PROTOCOL.ETHERNET.IPV4) {
             isIPv4 = true;
+          } else if (ret.info.type === 0x8100 && nbytes > ret.offset + 4) {
+            const innerType = buffer.readUInt16BE(ret.offset + 2);
+            if (innerType === 0x0800) {
+              ipv4Offset = ret.offset + 4;
+              if (nbytes < ipv4Offset + 20) return;
+              isIPv4 = true;
+            }
           }
-        }
-        if (isIPv4) {
-          const ipv4 = decoders.IPV4(buffer, ipv4Offset);
-          const { srcaddr, dstaddr, totallen, protocol } = ipv4.info;
-          const transportOffset = ipv4.offset;
+          if (isIPv4) {
+            const ipv4 = decoders.IPV4(buffer, ipv4Offset);
+            const { srcaddr, dstaddr, totallen, protocol } = ipv4.info;
+            const transportOffset = ipv4.offset;
 
-          const srcNonDevice = isNonDeviceIp(srcaddr);
-          const dstNonDevice = isNonDeviceIp(dstaddr);
-          // Skip if both endpoints are non-device addresses
-          if (srcNonDevice && dstNonDevice) return;
+            const srcNonDevice = isNonDeviceIp(srcaddr);
+            const dstNonDevice = isNonDeviceIp(dstaddr);
+            if (srcNonDevice && dstNonDevice) return;
 
-          let protoName = 'other';
-          if (protocol === PROTOCOL.IP.TCP) protoName = 'tcp';
-          else if (protocol === PROTOCOL.IP.UDP) protoName = 'udp';
-          else if (protocol === PROTOCOL.IP.ICMP) protoName = 'icmp';
+            let protoName = 'other';
+            if (protocol === PROTOCOL.IP.TCP) protoName = 'tcp';
+            else if (protocol === PROTOCOL.IP.UDP) protoName = 'udp';
+            else if (protocol === PROTOCOL.IP.ICMP) protoName = 'icmp';
 
-          // ASTERIX detection on UDP packets
-          if (protocol === PROTOCOL.IP.UDP && transportOffset + 8 <= nbytes) {
-            try {
-              const udpInfo = decoders.UDP(buffer, transportOffset);
-              // Only parse ASTERIX for high port numbers (skip DNS, NTP, etc.)
-              if (udpInfo.info.srcport >= 10000 || udpInfo.info.dstport >= 10000) {
-                const payloadOff = udpInfo.offset;
-                const payloadLen = Math.min(udpInfo.info.length - 8, nbytes - payloadOff);
-                if (payloadLen >= 3) {
-                  const cats = parseAsterixPayload(buffer, payloadOff, payloadLen);
-                  if (cats.length > 0 && !srcNonDevice) {
-                    // Use real src; for multicast/broadcast dst, attribute to src only
-                    const effectiveDst = dstNonDevice ? srcaddr : dstaddr;
-                    const akey = srcaddr + '>' + effectiveDst;
-                    if (!asterixFlows[akey]) {
-                      asterixFlows[akey] = { src: srcaddr, dst: effectiveDst, cats: {}, totalBytes: 0 };
-                    }
-                    const af = asterixFlows[akey];
-                    af.totalBytes += totallen;
-                    for (const c of cats) {
-                      if (!af.cats[c.cat]) af.cats[c.cat] = { bytes: 0, count: 0 };
-                      af.cats[c.cat].bytes += c.len;
-                      af.cats[c.cat].count++;
+            // ASTERIX detection on UDP packets
+            if (protocol === PROTOCOL.IP.UDP && transportOffset + 8 <= nbytes) {
+              try {
+                const udpInfo = decoders.UDP(buffer, transportOffset);
+                if (udpInfo.info.srcport >= 10000 || udpInfo.info.dstport >= 10000) {
+                  const payloadOff = udpInfo.offset;
+                  const payloadLen = Math.min(udpInfo.info.length - 8, nbytes - payloadOff);
+                  if (payloadLen >= 3) {
+                    const cats = parseAsterixPayload(buffer, payloadOff, payloadLen);
+                    if (cats.length > 0 && !srcNonDevice) {
+                      const effectiveDst = dstNonDevice ? srcaddr : dstaddr;
+                      const akey = srcaddr + '>' + effectiveDst;
+                      if (!asterixFlows[akey]) {
+                        asterixFlows[akey] = { src: srcaddr, dst: effectiveDst, cats: {}, totalBytes: 0 };
+                      }
+                      const af = asterixFlows[akey];
+                      af.totalBytes += totallen;
+                      for (const c of cats) {
+                        if (!af.cats[c.cat]) af.cats[c.cat] = { bytes: 0, count: 0 };
+                        af.cats[c.cat].bytes += c.len;
+                        af.cats[c.cat].count++;
+                      }
                     }
                   }
                 }
-              }
-            } catch (e) {}
-          }
-
-          const srcIsTarget = targetIpSet.has(srcaddr);
-          const dstIsTarget = targetIpSet.has(dstaddr);
-
-          // Inter-node traffic: both src and dst are monitored targets
-          if (srcIsTarget && dstIsTarget) {
-            const key = srcaddr + '>' + dstaddr;
-            if (!interNodeStats[key]) {
-              interNodeStats[key] = { src: srcaddr, dst: dstaddr, bytes: 0, packets: 0, protocols: {} };
+              } catch (e) {}
             }
-            const s = interNodeStats[key];
-            s.bytes += totallen;
-            s.packets++;
-            s.protocols[protoName] = (s.protocols[protoName] || 0) + 1;
-            return;
-          }
 
-          // Discovered node ↔ target traffic
-          const srcIsLocal = localIps.has(srcaddr);
-          const dstIsLocal = localIps.has(dstaddr);
-          if (!srcIsLocal && !dstIsLocal && (srcIsTarget !== dstIsTarget)) {
-            // Only register real device IPs as discovered nodes (not broadcast/multicast)
-            const unknownIp = srcIsTarget ? dstaddr : srcaddr;
-            const targetIp = srcIsTarget ? srcaddr : dstaddr;
-            if (!isNonDeviceIp(unknownIp)) {
-              if (!discoveredStats[unknownIp]) {
-                discoveredStats[unknownIp] = { connections: {} };
+            const srcIsTarget = targetIpSet.has(srcaddr);
+            const dstIsTarget = targetIpSet.has(dstaddr);
+
+            if (srcIsTarget && dstIsTarget) {
+              const key = srcaddr + '>' + dstaddr;
+              if (!interNodeStats[key]) {
+                interNodeStats[key] = { src: srcaddr, dst: dstaddr, bytes: 0, packets: 0, protocols: {} };
               }
-              if (!discoveredStats[unknownIp].connections[targetIp]) {
-                discoveredStats[unknownIp].connections[targetIp] = { bytes: 0, packets: 0, protocols: {} };
-              }
-              const dc = discoveredStats[unknownIp].connections[targetIp];
-              dc.bytes += totallen;
-              dc.packets++;
-              dc.protocols[protoName] = (dc.protocols[protoName] || 0) + 1;
+              const s = interNodeStats[key];
+              s.bytes += totallen;
+              s.packets++;
+              s.protocols[protoName] = (s.protocols[protoName] || 0) + 1;
+              return;
             }
-          }
 
-          // Track traffic between non-target IPs as discovered nodes
-          if (!srcIsTarget && !dstIsTarget && !srcIsLocal && !dstIsLocal) {
-            // Only record from source perspective to avoid double-counting
-            if (!isNonDeviceIp(srcaddr)) {
-              if (!discoveredStats[srcaddr]) {
-                discoveredStats[srcaddr] = { connections: {} };
-              }
-              if (!isNonDeviceIp(dstaddr)) {
-                // Register dstaddr as a discovered node if not already present
-                if (!discoveredStats[dstaddr]) {
-                  discoveredStats[dstaddr] = { connections: {} };
+            const srcIsLocal = localIps.has(srcaddr);
+            const dstIsLocal = localIps.has(dstaddr);
+            if (!srcIsLocal && !dstIsLocal && (srcIsTarget !== dstIsTarget)) {
+              const unknownIp = srcIsTarget ? dstaddr : srcaddr;
+              const targetIp = srcIsTarget ? srcaddr : dstaddr;
+              if (!isNonDeviceIp(unknownIp)) {
+                if (!discoveredStats[unknownIp]) {
+                  discoveredStats[unknownIp] = { connections: {} };
                 }
-                if (!discoveredStats[srcaddr].connections[dstaddr]) {
-                  discoveredStats[srcaddr].connections[dstaddr] = { bytes: 0, packets: 0, protocols: {} };
+                if (!discoveredStats[unknownIp].connections[targetIp]) {
+                  discoveredStats[unknownIp].connections[targetIp] = { bytes: 0, packets: 0, protocols: {} };
                 }
-                const dc = discoveredStats[srcaddr].connections[dstaddr];
+                const dc = discoveredStats[unknownIp].connections[targetIp];
                 dc.bytes += totallen;
                 dc.packets++;
                 dc.protocols[protoName] = (dc.protocols[protoName] || 0) + 1;
               }
-              // If dstaddr is broadcast/multicast, srcaddr is still registered as a node (no connection recorded)
             }
-            return;
-          }
 
-          // Local PC ↔ non-target: register remote IP as discovered node (e.g. streaming, web)
-          if ((srcIsLocal || dstIsLocal) && !srcIsTarget && !dstIsTarget) {
-            const remoteIp = srcIsLocal ? dstaddr : srcaddr;
-            if (!isNonDeviceIp(remoteIp)) {
-              if (!discoveredStats[remoteIp]) {
-                discoveredStats[remoteIp] = { connections: {} };
+            if (!srcIsTarget && !dstIsTarget && !srcIsLocal && !dstIsLocal) {
+              if (!isNonDeviceIp(srcaddr)) {
+                if (!discoveredStats[srcaddr]) {
+                  discoveredStats[srcaddr] = { connections: {} };
+                }
+                if (!isNonDeviceIp(dstaddr)) {
+                  if (!discoveredStats[dstaddr]) {
+                    discoveredStats[dstaddr] = { connections: {} };
+                  }
+                  if (!discoveredStats[srcaddr].connections[dstaddr]) {
+                    discoveredStats[srcaddr].connections[dstaddr] = { bytes: 0, packets: 0, protocols: {} };
+                  }
+                  const dc = discoveredStats[srcaddr].connections[dstaddr];
+                  dc.bytes += totallen;
+                  dc.packets++;
+                  dc.protocols[protoName] = (dc.protocols[protoName] || 0) + 1;
+                }
               }
-              // Connect to hub (localIp)
-              if (!discoveredStats[remoteIp].connections[localIp]) {
-                discoveredStats[remoteIp].connections[localIp] = { bytes: 0, packets: 0, protocols: {} };
+              return;
+            }
+
+            if ((srcIsLocal || dstIsLocal) && !srcIsTarget && !dstIsTarget) {
+              const remoteIp = srcIsLocal ? dstaddr : srcaddr;
+              if (!isNonDeviceIp(remoteIp)) {
+                if (!discoveredStats[remoteIp]) {
+                  discoveredStats[remoteIp] = { connections: {} };
+                }
+                if (!discoveredStats[remoteIp].connections[localIp]) {
+                  discoveredStats[remoteIp].connections[localIp] = { bytes: 0, packets: 0, protocols: {} };
+                }
+                const dc = discoveredStats[remoteIp].connections[localIp];
+                dc.bytes += totallen;
+                dc.packets++;
+                dc.protocols[protoName] = (dc.protocols[protoName] || 0) + 1;
               }
-              const dc = discoveredStats[remoteIp].connections[localIp];
-              dc.bytes += totallen;
-              dc.packets++;
-              dc.protocols[protoName] = (dc.protocols[protoName] || 0) + 1;
+              return;
             }
-            return;
-          }
 
-          // Hub ↔ target traffic (includes discovered→target)
-          let targetIp, direction;
-          if (srcIsLocal && dstIsTarget) {
-            targetIp = dstaddr;
-            direction = 'out';
-          } else if (dstIsLocal && srcIsTarget) {
-            targetIp = srcaddr;
-            direction = 'in';
-          } else if (srcIsTarget) {
-            targetIp = srcaddr;
-            direction = 'in';
-          } else if (dstIsTarget) {
-            targetIp = dstaddr;
-            direction = 'out';
-          } else {
-            return;
-          }
-
-          if (!trafficStats[targetIp]) {
-            trafficStats[targetIp] = {
-              bytesIn: 0, bytesOut: 0,
-              packetsIn: 0, packetsOut: 0,
-              protocols: {}
-            };
-          }
-
-          const stats = trafficStats[targetIp];
-          if (direction === 'in') {
-            stats.bytesIn += totallen;
-            stats.packetsIn++;
-          } else {
-            stats.bytesOut += totallen;
-            stats.packetsOut++;
-          }
-          stats.protocols[protoName] = (stats.protocols[protoName] || 0) + 1;
-        }
-      } catch (e) { /* ignore decode errors */ }
-    });
-
-    captureSession = cap;
-
-    // Send aggregated stats to renderer every second
-    trafficTimer = setInterval(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (Object.keys(trafficStats).length > 0) {
-          safeSend('traffic-stats', trafficStats);
-        }
-        if (Object.keys(interNodeStats).length > 0) {
-          safeSend('internode-stats', Object.values(interNodeStats));
-        }
-        // Merge current discoveredStats into persistent tracker
-        const now = Date.now();
-        for (const [ip, data] of Object.entries(discoveredStats)) {
-          if (!discoveredIpTracker[ip]) {
-            discoveredIpTracker[ip] = { connections: {}, totalBytes: 0, lastSeen: 0 };
-          }
-          const tracker = discoveredIpTracker[ip];
-          tracker.lastSeen = now;
-          for (const [peerIp, conn] of Object.entries(data.connections)) {
-            if (!tracker.connections[peerIp]) {
-              tracker.connections[peerIp] = { bytes: 0, packets: 0, protocols: {} };
+            let targetIp, direction;
+            if (srcIsLocal && dstIsTarget) {
+              targetIp = dstaddr;
+              direction = 'out';
+            } else if (dstIsLocal && srcIsTarget) {
+              targetIp = srcaddr;
+              direction = 'in';
+            } else if (srcIsTarget) {
+              targetIp = srcaddr;
+              direction = 'in';
+            } else if (dstIsTarget) {
+              targetIp = dstaddr;
+              direction = 'out';
+            } else {
+              return;
             }
-            const tc = tracker.connections[peerIp];
-            tc.bytes += conn.bytes;
-            tc.packets += conn.packets;
-            for (const [p, c] of Object.entries(conn.protocols)) {
-              tc.protocols[p] = (tc.protocols[p] || 0) + c;
+
+            if (!trafficStats[targetIp]) {
+              trafficStats[targetIp] = {
+                bytesIn: 0, bytesOut: 0,
+                packetsIn: 0, packetsOut: 0,
+                protocols: {}
+              };
             }
-            tracker.totalBytes += conn.bytes;
+
+            const stats = trafficStats[targetIp];
+            if (direction === 'in') {
+              stats.bytesIn += totallen;
+              stats.packetsIn++;
+            } else {
+              stats.bytesOut += totallen;
+              stats.packetsOut++;
+            }
+            stats.protocols[protoName] = (stats.protocols[protoName] || 0) + 1;
           }
-        }
+        } catch (e) { /* ignore decode errors */ }
+      });
 
-        // Prune stale entries from discoveredIpTracker (older than 2 hours)
-        for (const [ip, d] of Object.entries(discoveredIpTracker)) {
-          if (now - d.lastSeen > 7200000) {
-            delete discoveredIpTracker[ip];
+      captureSessions.push(cap);
+      console.log(`Packet capture started on ${netInfo.ip} (${netInfo.device})`);
+    } catch (e) {
+      console.error(`Failed to start capture on ${netInfo.device}:`, e);
+      safeSend('capture-error', 'Failed to start capture on ' + netInfo.device + ': ' + (e.message || String(e)));
+    }
+  }
+
+  if (captureSessions.length === 0) return;
+
+  // Send aggregated stats to renderer every second
+  trafficTimer = setInterval(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (Object.keys(trafficStats).length > 0) {
+        safeSend('traffic-stats', trafficStats);
+      }
+      if (Object.keys(interNodeStats).length > 0) {
+        safeSend('internode-stats', Object.values(interNodeStats));
+      }
+      // Merge current discoveredStats into persistent tracker
+      const now = Date.now();
+      for (const [ip, data] of Object.entries(discoveredStats)) {
+        if (!discoveredIpTracker[ip]) {
+          discoveredIpTracker[ip] = { connections: {}, totalBytes: 0, lastSeen: 0 };
+        }
+        const tracker = discoveredIpTracker[ip];
+        tracker.lastSeen = now;
+        for (const [peerIp, conn] of Object.entries(data.connections)) {
+          if (!tracker.connections[peerIp]) {
+            tracker.connections[peerIp] = { bytes: 0, packets: 0, protocols: {} };
           }
-        }
-
-        // Send recently-seen discovered nodes (stable for 30 seconds)
-        const recentDiscovered = Object.entries(discoveredIpTracker)
-          .filter(([ip, d]) => now - d.lastSeen < 3600000)
-          .map(([ip, d]) => ({ ip, connections: d.connections, totalBytes: d.totalBytes }))
-          .sort((a, b) => b.totalBytes - a.totalBytes)
-          .slice(0, 30);
-        if (recentDiscovered.length > 0) {
-          safeSend('discovered-nodes', recentDiscovered);
-        }
-
-        if (Object.keys(asterixFlows).length > 0) {
-          safeSend('asterix-flows', Object.values(asterixFlows));
+          const tc = tracker.connections[peerIp];
+          tc.bytes += conn.bytes;
+          tc.packets += conn.packets;
+          for (const [p, c] of Object.entries(conn.protocols)) {
+            tc.protocols[p] = (tc.protocols[p] || 0) + c;
+          }
+          tracker.totalBytes += conn.bytes;
         }
       }
-      trafficStats = {};
-      interNodeStats = {};
-      discoveredStats = {};
-      asterixFlows = {};
-    }, 1000);
 
-    console.log(`Packet capture started on ${netInfo.ip} (${netInfo.device})`);
-  } catch (e) {
-    console.error('Failed to start capture:', e);
-    safeSend('capture-error', 'Failed to start capture: ' + (e.message || String(e)));
-  }
+      // Prune stale entries from discoveredIpTracker (older than 2 hours)
+      for (const [ip, d] of Object.entries(discoveredIpTracker)) {
+        if (now - d.lastSeen > 7200000) {
+          delete discoveredIpTracker[ip];
+        }
+      }
+
+      // Send recently-seen discovered nodes (stable for 30 seconds)
+      const recentDiscovered = Object.entries(discoveredIpTracker)
+        .filter(([ip, d]) => now - d.lastSeen < 3600000)
+        .map(([ip, d]) => ({ ip, connections: d.connections, totalBytes: d.totalBytes }))
+        .sort((a, b) => b.totalBytes - a.totalBytes)
+        .slice(0, 30);
+      if (recentDiscovered.length > 0) {
+        safeSend('discovered-nodes', recentDiscovered);
+      }
+
+      if (Object.keys(asterixFlows).length > 0) {
+        safeSend('asterix-flows', Object.values(asterixFlows));
+      }
+    }
+    trafficStats = {};
+    interNodeStats = {};
+    discoveredStats = {};
+    asterixFlows = {};
+  }, 1000);
 }
 
 function stopCapture() {
-  if (captureSession) {
-    try { captureSession.close(); } catch (e) {}
-    captureSession = null;
+  for (const cap of captureSessions) {
+    try { cap.close(); } catch (e) {}
   }
+  captureSessions = [];
   if (trafficTimer) {
     clearInterval(trafficTimer);
     trafficTimer = null;
@@ -725,7 +736,7 @@ function startPinging() {
 }
 
 function stopPinging() {
-  if (!running && pingIntervalTimers.length === 0 && activeChildProcesses.length === 0 && !alarmTimer && !captureSession) return;
+  if (!running && pingIntervalTimers.length === 0 && activeChildProcesses.length === 0 && !alarmTimer && captureSessions.length === 0) return;
   running = false;
   pingGeneration++;  // Invalidate in-flight ping callbacks
   stopCapture();
@@ -951,14 +962,18 @@ ipcMain.handle('get-network-interfaces', () => {
 
 ipcMain.handle('save-capture-settings', (event, captureSettings) => {
   if (!captureSettings || typeof captureSettings !== 'object') return settings;
+  const oldDevices = settings.capture_devices;
   const oldDevice = settings.capture_device;
-  const oldMode = settings.capture_mode;
-  settings.capture_device = captureSettings.capture_device || '';
-  settings.capture_mode = captureSettings.capture_mode || 'all';
+  if (Array.isArray(captureSettings.capture_devices)) {
+    settings.capture_devices = captureSettings.capture_devices
+      .filter(cd => cd && typeof cd === 'object' && typeof cd.name === 'string')
+      .map(cd => ({ name: cd.name, enabled: cd.enabled !== false }));
+    settings.capture_device = '';  // Clear legacy field
+  }
   const success = saveSettings();
   if (!success) {
-    settings.capture_device = oldDevice;  // Rollback on save failure
-    settings.capture_mode = oldMode;
+    settings.capture_devices = oldDevices;
+    settings.capture_device = oldDevice;
   }
   return settings;
 });

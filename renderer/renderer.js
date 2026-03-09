@@ -553,11 +553,8 @@ document.getElementById('btnCancelSound').addEventListener('click', () => hideMo
 // --- Capture Settings ---
 document.getElementById('menuCapture').addEventListener('click', async () => {
   if (!showModal('captureModal')) return;
-  const select = document.getElementById('selectCaptureDevice');
-  const infoEl = document.querySelector('#captureDeviceInfo small');
-
-  // Reset options
-  select.innerHTML = '<option value="">자동 감지</option>';
+  const listEl = document.getElementById('captureDeviceList');
+  listEl.innerHTML = '';
 
   // Populate network interfaces
   let interfaces = [];
@@ -565,37 +562,50 @@ document.getElementById('menuCapture').addEventListener('click', async () => {
     interfaces = await window.api.getNetworkInterfaces();
   } catch (e) {
     console.error('Failed to get network interfaces:', e);
-    if (infoEl) infoEl.textContent = '네트워크 장치 조회 실패';
   }
+
+  // Build enabled device map from settings
+  const enabledMap = {};
+  const captureDevices = settings.capture_devices || [];
+  for (const cd of captureDevices) {
+    if (cd && cd.name) enabledMap[cd.name] = cd.enabled !== false;
+  }
+  // Legacy single device support
+  if (captureDevices.length === 0 && settings.capture_device) {
+    enabledMap[settings.capture_device] = true;
+  }
+
   for (const iface of interfaces) {
-    const opt = document.createElement('option');
-    opt.value = iface.name;
-    const desc = iface.description || iface.name;
-    const ips = iface.addresses.join(', ');
-    opt.textContent = `${desc} (${ips})`;
-    select.appendChild(opt);
+    const item = document.createElement('label');
+    item.className = 'capture-device-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.deviceName = iface.name;
+    cb.checked = enabledMap[iface.name] || false;
+    const info = document.createElement('div');
+    info.className = 'cap-dev-info';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'cap-dev-name';
+    nameEl.textContent = iface.description || iface.name;
+    const addrsEl = document.createElement('div');
+    addrsEl.className = 'cap-dev-addrs';
+    addrsEl.textContent = iface.addresses.join(', ');
+    info.appendChild(nameEl);
+    info.appendChild(addrsEl);
+    item.appendChild(cb);
+    item.appendChild(info);
+    listEl.appendChild(item);
   }
-
-  // Set current values
-  select.value = settings.capture_device || '';
-
-  // Show device info on change (use onchange to avoid listener accumulation)
-  select.onchange = () => {
-    if (!infoEl) return;
-    const dev = interfaces.find(i => i.name === select.value);
-    if (dev) {
-      infoEl.textContent = `장치: ${dev.name}`;
-    } else {
-      infoEl.textContent = '서브넷이 일치하는 어댑터를 자동으로 선택합니다.';
-    }
-  };
-  select.dispatchEvent(new Event('change'));
 });
 
 document.getElementById('btnSaveCapture').addEventListener('click', async () => {
-  const captureDevice = document.getElementById('selectCaptureDevice').value;
+  const checkboxes = document.querySelectorAll('#captureDeviceList input[type="checkbox"]');
+  const captureDevices = [];
+  checkboxes.forEach(cb => {
+    captureDevices.push({ name: cb.dataset.deviceName, enabled: cb.checked });
+  });
   try {
-    const saved = await window.api.saveCaptureSettings({ capture_device: captureDevice, capture_mode: 'all' });
+    const saved = await window.api.saveCaptureSettings({ capture_devices: captureDevices });
     if (saved) settings = saved;
   } catch (e) {
     console.error('Failed to save capture settings:', e);
@@ -750,8 +760,8 @@ document.getElementById('btnSaveTopo').addEventListener('click', async () => {
     return;
   }
   closeTopoEditor();
-  // Apply to 3D view
-  if (currentView === '3d' && window.view3d && window.view3d.isActive() && window.view3d.setTopology) {
+  // Apply to 3D view (setTopology auto-rebuilds if targets exist)
+  if (currentView === '3d' && window.view3d && window.view3d.isActive()) {
     window.view3d.setTopology(topo);
     window.view3d.setTargets(settings.targets || [], ipToIndex);
   }

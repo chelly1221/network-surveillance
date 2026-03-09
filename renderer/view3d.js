@@ -478,6 +478,10 @@
     // Clean up old infra nodes and topo lines
     for (const k of Object.keys(infraNodes)) removeInfraNode(k);
     for (const k of Object.keys(topoLines)) removeTopoLine(k);
+    // Auto-rebuild targets if available (ensures topology changes are always reflected)
+    if (active && targets.length > 0) {
+      setTargets(targets, ipMap);
+    }
   }
 
   const INFRA_COLORS = {
