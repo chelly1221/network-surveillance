@@ -139,22 +139,22 @@
   const TGT_R = 25;
   const DISC_R = 40;
 
-  const C_HUB = 0x00bcd4;
-  const C_OK = 0x4caf50;
-  const C_FAIL = 0xf44336;
-  const C_IDLE = 0x607d8b;
+  const C_HUB = 0x00e5ff;
+  const C_OK = 0x00ff88;
+  const C_FAIL = 0xff2244;
+  const C_IDLE = 0x4fc3f7;
   const C_DISABLED = 0x424242;
-  const C_DISC = 0xff9800;
+  const C_DISC = 0xffab40;
 
   const PROTO_C = {
-    tcp: new THREE.Color(0x3498db),
-    udp: new THREE.Color(0x2ecc71),
-    icmp: new THREE.Color(0x9b59b6),
-    other: new THREE.Color(0x95a5a6)
+    tcp: new THREE.Color(0x00b0ff),
+    udp: new THREE.Color(0x00e676),
+    icmp: new THREE.Color(0xd500f9),
+    other: new THREE.Color(0x78909c)
   };
   const AST_C = {
-    48: 0x00e5ff, 34: 0xffa000, 62: 0xe040fb, 240: 0x76ff03,
-    1: 0x26c6da, 21: 0xff7043, 10: 0x66bb6a, _default: 0xb0bec5
+    48: 0x00e5ff, 34: 0xffab00, 62: 0xea80fc, 240: 0xb2ff59,
+    1: 0x26c6da, 21: 0xff8a65, 10: 0x69f0ae, _default: 0xb0bec5
   };
   const AST_NAMES = {
     48: '레이더', 34: '상태', 62: '항적', 240: '영상',
@@ -169,8 +169,8 @@
     sceneObjects = [];
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x080c14);
-    scene.fog = new THREE.FogExp2(0x080c14, 0.005);
+    scene.background = new THREE.Color(0x060a12);
+    scene.fog = new THREE.FogExp2(0x060a12, 0.004);
 
     const w = container.clientWidth || 400;
     const h = container.clientHeight || 300;
@@ -196,17 +196,21 @@
     container.appendChild(scanline);
 
     // Lights
-    const ambient = new THREE.AmbientLight(0x222244, 0.5);
+    const ambient = new THREE.AmbientLight(0x334466, 0.8);
     scene.add(ambient);
-    const pl = new THREE.PointLight(0x00bcd4, 2, 80);
-    pl.position.set(0, 8, 0);
+    const pl = new THREE.PointLight(0x00e5ff, 3, 100);
+    pl.position.set(0, 10, 0);
     scene.add(pl);
-    const hemi = new THREE.HemisphereLight(0x334466, 0x111122, 0.3);
+    const hemi = new THREE.HemisphereLight(0x4466aa, 0x112233, 0.5);
     scene.add(hemi);
     // Secondary fill light for outer nodes
-    const fill = new THREE.PointLight(0x4466aa, 0.8, 120);
-    fill.position.set(-30, 20, -30);
+    const fill = new THREE.PointLight(0x6688cc, 1.2, 150);
+    fill.position.set(-30, 25, -30);
     scene.add(fill);
+    // Back fill for depth
+    const backFill = new THREE.PointLight(0x00e5ff, 0.6, 120);
+    backFill.position.set(30, 15, 30);
+    scene.add(backFill);
 
     buildGrid();
     buildHub();
@@ -232,7 +236,7 @@
 
   // ===== Environment =====
   function buildGrid() {
-    const mat = new THREE.LineBasicMaterial({ color: 0x15202e, transparent: true, opacity: 0.4 });
+    const mat = new THREE.LineBasicMaterial({ color: 0x1a2a3e, transparent: true, opacity: 0.5 });
     for (let r = 10; r <= 50; r += 10) {
       const pts = [];
       for (let i = 0; i <= 64; i++) {
@@ -244,7 +248,7 @@
       scene.add(line);
       sceneObjects.push({ geo, obj: line });
     }
-    const cm = new THREE.LineBasicMaterial({ color: 0x15202e, transparent: true, opacity: 0.2 });
+    const cm = new THREE.LineBasicMaterial({ color: 0x1a2a3e, transparent: true, opacity: 0.3 });
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI;
       const geo = new THREE.BufferGeometry().setFromPoints([
@@ -264,7 +268,7 @@
     // Core sphere
     const coreGeo = new THREE.SphereGeometry(2, 32, 32);
     const coreMat = new THREE.MeshPhongMaterial({
-      color: C_HUB, emissive: 0x004d5a, shininess: 80, transparent: true, opacity: 0.9
+      color: C_HUB, emissive: C_HUB, emissiveIntensity: 0.6, shininess: 100, transparent: true, opacity: 0.95
     });
     const core = new THREE.Mesh(coreGeo, coreMat);
     hubGroup.add(core);
@@ -272,14 +276,14 @@
 
     // Glow sphere
     const glowGeo = new THREE.SphereGeometry(3.2, 24, 24);
-    const glowMat = new THREE.MeshBasicMaterial({ color: C_HUB, transparent: true, opacity: 0.07 });
+    const glowMat = new THREE.MeshBasicMaterial({ color: C_HUB, transparent: true, opacity: 0.15, blending: THREE.AdditiveBlending, depthWrite: false });
     hubGroup.add(new THREE.Mesh(glowGeo, glowMat));
     sceneObjects.push({ geo: glowGeo, mat: glowMat });
 
     // Energy field (outer pulsing sphere)
     const fieldGeo = new THREE.SphereGeometry(4.5, 16, 16);
     const fieldMat = new THREE.MeshBasicMaterial({
-      color: 0x00e5ff, transparent: true, opacity: 0.03,
+      color: 0x00e5ff, transparent: true, opacity: 0.06,
       blending: THREE.AdditiveBlending, depthWrite: false, wireframe: true
     });
     const field = new THREE.Mesh(fieldGeo, fieldMat);
@@ -289,7 +293,7 @@
 
     // Ring 1
     const ring1Geo = new THREE.TorusGeometry(3.5, 0.06, 8, 64);
-    const ring1Mat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.5 });
+    const ring1Mat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
     const ring1 = new THREE.Mesh(ring1Geo, ring1Mat);
     ring1.rotation.x = Math.PI / 2;
     hubGroup.add(ring1);
@@ -298,7 +302,7 @@
 
     // Ring 2
     const ring2Geo = new THREE.TorusGeometry(4.2, 0.04, 8, 64);
-    const ring2Mat = new THREE.MeshBasicMaterial({ color: C_HUB, transparent: true, opacity: 0.25 });
+    const ring2Mat = new THREE.MeshBasicMaterial({ color: C_HUB, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false });
     const ring2 = new THREE.Mesh(ring2Geo, ring2Mat);
     ring2.rotation.x = Math.PI / 3;
     ring2.rotation.y = Math.PI / 4;
@@ -308,7 +312,7 @@
 
     // Ring 3 (new — slow outer orbit)
     const ring3Geo = new THREE.TorusGeometry(5.0, 0.025, 8, 64);
-    const ring3Mat = new THREE.MeshBasicMaterial({ color: 0x00bcd4, transparent: true, opacity: 0.12 });
+    const ring3Mat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false });
     const ring3 = new THREE.Mesh(ring3Geo, ring3Mat);
     ring3.rotation.x = Math.PI / 5;
     ring3.rotation.z = Math.PI / 6;
@@ -331,7 +335,7 @@
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const mat = new THREE.PointsMaterial({
-      color: 0x445566, size: 0.5, transparent: true, opacity: 0.6, sizeAttenuation: true
+      color: 0x667788, size: 0.6, transparent: true, opacity: 0.7, sizeAttenuation: true
     });
     const pts = new THREE.Points(geo, mat);
     scene.add(pts);
@@ -339,12 +343,16 @@
   }
 
   // ===== Particle System (Points-based: 1 draw call) =====
+  // Trail system: each particle spawns TRAIL_LEN sub-points
+  const TRAIL_LEN = 4;
+  const MAX_DRAW = MAX_P * TRAIL_LEN;
+
   function buildParticleSystem() {
     pGeo = new THREE.BufferGeometry();
-    pGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_P * 3), 3));
-    pGeo.setAttribute('customColor', new THREE.BufferAttribute(new Float32Array(MAX_P * 3), 3));
-    pGeo.setAttribute('size', new THREE.BufferAttribute(new Float32Array(MAX_P), 1));
-    pGeo.setAttribute('opacity', new THREE.BufferAttribute(new Float32Array(MAX_P), 1));
+    pGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_DRAW * 3), 3));
+    pGeo.setAttribute('customColor', new THREE.BufferAttribute(new Float32Array(MAX_DRAW * 3), 3));
+    pGeo.setAttribute('size', new THREE.BufferAttribute(new Float32Array(MAX_DRAW), 1));
+    pGeo.setAttribute('opacity', new THREE.BufferAttribute(new Float32Array(MAX_DRAW), 1));
     pGeo.setDrawRange(0, 0);
 
     pMat = new THREE.ShaderMaterial({
@@ -368,10 +376,11 @@
         'void main() {',
         '  float d = length(gl_PointCoord - vec2(0.5));',
         '  if (d > 0.5) discard;',
-        '  float core = smoothstep(0.5, 0.05, d);',
-        '  float glow = exp(-d * d * 12.0) * 0.3;',
-        '  float alpha = (core * 0.8 + glow) * vOpacity;',
-        '  gl_FragColor = vec4(vColor, alpha);',
+        '  float core = smoothstep(0.5, 0.0, d);',
+        '  float glow = exp(-d * d * 8.0) * 0.6;',
+        '  float alpha = (core + glow) * vOpacity;',
+        '  vec3 brightened = vColor + core * 0.4;',
+        '  gl_FragColor = vec4(brightened, alpha);',
         '}'
       ].join('\n'),
       transparent: true,
@@ -406,34 +415,42 @@
         if (p.progress >= 1) { particles.splice(i, 1); }
       }
     }
-    // Write visible particles to typed arrays
+    // Write visible particles + trail sub-points to typed arrays
     const posArr = pGeo.attributes.position.array;
     const colArr = pGeo.attributes.customColor.array;
     const sizeArr = pGeo.attributes.size.array;
     const opaArr = pGeo.attributes.opacity.array;
     let count = 0;
+    const trailStep = 0.04; // how far back each trail point is
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
       if (p.age < p.delay) continue;
-      const t = p.progress;
+      if (count + TRAIL_LEN > MAX_DRAW) break;
+
       _tmpVec2.subVectors(p.to, p.from);
       const len = _tmpVec2.length();
       if (len > 0) _tmpVec2.divideScalar(len);
       _tmpVec3.set(-_tmpVec2.z, 0, _tmpVec2.x);
       if (_tmpVec3.lengthSq() < 0.001) _tmpVec3.set(1, 0, 0);
       _tmpVec3.normalize();
-      const wobble = Math.sin(t * Math.PI * 3 + p.age * 0.003) * 0.8;
-      const idx3 = count * 3;
-      posArr[idx3] = p.from.x + (p.to.x - p.from.x) * t + _tmpVec3.x * wobble;
-      posArr[idx3 + 1] = p.from.y + (p.to.y - p.from.y) * t + Math.sin(t * Math.PI) * 2;
-      posArr[idx3 + 2] = p.from.z + (p.to.z - p.from.z) * t + _tmpVec3.z * wobble;
-      const fade = Math.sin(t * Math.PI);
-      colArr[idx3] = p.color.r;
-      colArr[idx3 + 1] = p.color.g;
-      colArr[idx3 + 2] = p.color.b;
-      sizeArr[count] = 6.0 * p.size;
-      opaArr[count] = 0.5 + fade * 0.5;
-      count++;
+
+      // Draw head + trail points
+      for (let tr = 0; tr < TRAIL_LEN; tr++) {
+        const t = Math.max(0, p.progress - tr * trailStep);
+        const wobble = Math.sin(t * Math.PI * 3 + p.age * 0.003) * 0.6;
+        const idx3 = count * 3;
+        posArr[idx3] = p.from.x + (p.to.x - p.from.x) * t + _tmpVec3.x * wobble;
+        posArr[idx3 + 1] = p.from.y + (p.to.y - p.from.y) * t + Math.sin(t * Math.PI) * 1.5;
+        posArr[idx3 + 2] = p.from.z + (p.to.z - p.from.z) * t + _tmpVec3.z * wobble;
+        const fade = Math.sin(t * Math.PI);
+        const trailFade = 1 - tr / TRAIL_LEN; // head=1, tail=0
+        colArr[idx3] = p.color.r;
+        colArr[idx3 + 1] = p.color.g;
+        colArr[idx3 + 2] = p.color.b;
+        sizeArr[count] = (tr === 0 ? 8.0 : 5.0 * trailFade) * p.size;
+        opaArr[count] = (0.7 + fade * 0.3) * trailFade;
+        count++;
+      }
     }
     pGeo.setDrawRange(0, count);
     if (count > 0) {
@@ -490,14 +507,14 @@
 
     const sphereGeo = new THREE.SphereGeometry(1.0, 16, 16);
     const sphereMat = new THREE.MeshPhongMaterial({
-      color, emissive: color, emissiveIntensity: 0.3,
-      shininess: 60, transparent: true, opacity: 0.85
+      color, emissive: color, emissiveIntensity: 0.5,
+      shininess: 80, transparent: true, opacity: 0.9
     });
     const sphere = new THREE.Mesh(sphereGeo, sphereMat);
     g.add(sphere);
 
     const glowGeo = new THREE.SphereGeometry(1.6, 10, 10);
-    const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.06 });
+    const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false });
     g.add(new THREE.Mesh(glowGeo, glowMat));
 
     scene.add(g);
@@ -533,7 +550,7 @@
 
       const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
       const mat = new THREE.LineBasicMaterial({
-        color: 0x37474f, transparent: true, opacity: 0.4
+        color: 0x2a5a6a, transparent: true, opacity: 0.5
       });
       const line = new THREE.Line(geo, mat);
       scene.add(line);
@@ -636,23 +653,24 @@
     // Main sphere
     const sphereGeo = new THREE.SphereGeometry(1.2, 20, 20);
     const sphereMat = new THREE.MeshPhongMaterial({
-      color: c, emissive: c, emissiveIntensity: 0.25, shininess: 60,
-      transparent: true, opacity: t.enabled ? 0.9 : 0.4
+      color: c, emissive: c, emissiveIntensity: 0.5, shininess: 80,
+      transparent: true, opacity: t.enabled ? 0.95 : 0.4
     });
     const sphere = new THREE.Mesh(sphereGeo, sphereMat);
     g.add(sphere);
 
     // Glow sphere
-    const glowGeo = new THREE.SphereGeometry(1.8, 12, 12);
-    const glowMat = new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.07 });
+    const glowGeo = new THREE.SphereGeometry(2.2, 12, 12);
+    const glowMat = new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: t.enabled ? 0.15 : 0.03, blending: THREE.AdditiveBlending, depthWrite: false });
     const glow = new THREE.Mesh(glowGeo, glowMat);
     g.add(glow);
 
     // Orbital ring for each node
     const ringGeo = new THREE.TorusGeometry(2.0, 0.02, 8, 32);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: t.enabled ? 0x607d8b : C_DISABLED, transparent: true,
-      opacity: t.enabled ? 0.2 : 0.05
+      color: t.enabled ? C_IDLE : C_DISABLED, transparent: true,
+      opacity: t.enabled ? 0.35 : 0.05,
+      blending: THREE.AdditiveBlending, depthWrite: false
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = Math.PI / 2 + (Math.random() - 0.5) * 0.4;
@@ -674,8 +692,8 @@
     if (!skipHubLine) {
       lGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), pos]);
       lMat = new THREE.LineBasicMaterial({
-        color: t.enabled ? 0x37474f : C_DISABLED,
-        transparent: true, opacity: t.enabled ? 0.35 : 0.12
+        color: t.enabled ? 0x2a5a6a : C_DISABLED,
+        transparent: true, opacity: t.enabled ? 0.45 : 0.12
       });
       line = new THREE.Line(lGeo, lMat);
       scene.add(line);
@@ -683,10 +701,10 @@
 
     // Labels
     const labels = {
-      name: makeLabel(t.name, t.enabled ? '#b0bec5' : '#555', 'v3d-label name'),
-      ip: makeLabel(t.address, '#556', 'v3d-label ip'),
-      status: makeLabel('', '#888', 'v3d-label status'),
-      bw: makeLabel('', '#4caf50', 'v3d-label bw')
+      name: makeLabel(t.name, t.enabled ? '#e0e8f0' : '#555', 'v3d-label name'),
+      ip: makeLabel(t.address, '#7899aa', 'v3d-label ip'),
+      status: makeLabel('', '#aaa', 'v3d-label status'),
+      bw: null
     };
 
     scene.add(g);
@@ -717,19 +735,19 @@
     const c = n.status === 'fail' ? C_FAIL : C_OK;
     n.sphere.material.color.setHex(c);
     n.sphere.material.emissive.setHex(c);
-    n.sphere.material.emissiveIntensity = n.status === 'fail' ? 0.5 : 0.2;
+    n.sphere.material.emissiveIntensity = n.status === 'fail' ? 0.8 : 0.5;
     n.glow.material.color.setHex(c);
-    n.glow.material.opacity = n.status === 'fail' ? 0.18 : 0.07;
+    n.glow.material.opacity = n.status === 'fail' ? 0.3 : 0.15;
     if (n.lMat) {
-      n.lMat.color.setHex(n.status === 'fail' ? 0xc62828 : 0x2e7d32);
-      n.lMat.opacity = 0.6;
+      n.lMat.color.setHex(n.status === 'fail' ? 0xff3355 : 0x00cc88);
+      n.lMat.opacity = 0.7;
     }
     // Orbital ring color follows status
     n.ring.material.color.setHex(c);
-    n.ring.material.opacity = n.status === 'fail' ? 0.35 : 0.2;
+    n.ring.material.opacity = n.status === 'fail' ? 0.5 : 0.35;
     if (n.labels.status) {
       n.labels.status.textContent = status;
-      n.labels.status.style.color = n.status === 'fail' ? '#f44336' : '#4caf50';
+      n.labels.status.style.color = n.status === 'fail' ? '#ff4466' : '#00ff88';
     }
     // Update topology connection lines to reflect failure/ok status
     if (topology && topology.devices && topology.connections) {
@@ -739,8 +757,8 @@
           if (conn.from === dev.id || conn.to === dev.id) {
             const key = conn.from + '>' + conn.to;
             if (topoLines[key]) {
-              topoLines[key]._mat.color.setHex(n.status === 'fail' ? 0xc62828 : 0x37474f);
-              topoLines[key]._mat.opacity = n.status === 'fail' ? 0.7 : 0.4;
+              topoLines[key]._mat.color.setHex(n.status === 'fail' ? 0xff3355 : 0x2a5a6a);
+              topoLines[key]._mat.opacity = n.status === 'fail' ? 0.8 : 0.5;
             }
           }
         }
@@ -848,15 +866,15 @@
     g.position.copy(pos);
     const sphereGeo = new THREE.SphereGeometry(0.7, 12, 12);
     const sphereMat = new THREE.MeshPhongMaterial({
-      color: C_DISC, emissive: C_DISC, emissiveIntensity: 0.3, transparent: true, opacity: 0.7
+      color: C_DISC, emissive: C_DISC, emissiveIntensity: 0.45, transparent: true, opacity: 0.8
     });
     const sphere = new THREE.Mesh(sphereGeo, sphereMat);
     g.add(sphere);
     const glowGeo = new THREE.SphereGeometry(1.2, 8, 8);
-    const glowMat = new THREE.MeshBasicMaterial({ color: C_DISC, transparent: true, opacity: 0.05 });
+    const glowMat = new THREE.MeshBasicMaterial({ color: C_DISC, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false });
     g.add(new THREE.Mesh(glowGeo, glowMat));
     scene.add(g);
-    const label = makeLabel(ip, '#ff9800', 'v3d-label disc');
+    const label = makeLabel(ip, '#ffab40', 'v3d-label disc');
     discNodes[ip] = {
       group: g, sphere, label, pos, lastSeen: Date.now(), lines: {},
       _geo: [sphereGeo, glowGeo], _mat: [sphereMat, glowMat]
@@ -884,7 +902,7 @@
     if (!dn || dn.lines[peer]) return;
     const geo = new THREE.BufferGeometry().setFromPoints([fromPos, toPos]);
     const mat = new THREE.LineDashedMaterial({
-      color: 0x6d4c00, transparent: true, opacity: 0.25,
+      color: 0x996600, transparent: true, opacity: 0.35,
       dashSize: 1, gapSize: 0.5
     });
     const line = new THREE.Line(geo, mat);
@@ -908,7 +926,7 @@
       if (!interLines[key]) {
         const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
         const mat = new THREE.LineDashedMaterial({
-          color: 0xe67e22, transparent: true, opacity: 0.4,
+          color: 0xffab40, transparent: true, opacity: 0.55,
           dashSize: 1.5, gapSize: 0.8
         });
         const line = new THREE.Line(geo, mat);
@@ -1009,14 +1027,6 @@
       const n = tgtNodes[idx];
       if (!n) continue;
 
-      // Bandwidth label
-      if (n.labels.bw) {
-        const inR = fmtBW(data.bytesIn);
-        const outR = fmtBW(data.bytesOut);
-        n.labels.bw.innerHTML = '<span style="color:#4caf50">↓' + inR + '</span> <span style="color:#3498db">↑' + outR + '</span>';
-        n.labels.bw.style.opacity = (data.packetsIn + data.packetsOut) > 0 ? '1' : '0.3';
-      }
-
       // Line glow
       const total = data.bytesIn + data.bytesOut;
       const intensity = Math.min(total / 50000, 1);
@@ -1055,6 +1065,9 @@
   }
 
   // ===== Ambient Flow =====
+  const _ambientOrigin = new THREE.Vector3();
+  const _ambientColor = new THREE.Color(0x00b0ff).multiplyScalar(0.6);
+
   function startAmbientFlow() {
     stopAmbientFlow();
     ambientTimer = setInterval(() => {
@@ -1062,7 +1075,7 @@
       for (const [idx, n] of Object.entries(tgtNodes)) {
         if (n.status === 'disabled') continue;
         if (Math.random() < 0.3) {
-          emitParticle(new THREE.Vector3(), n.pos, new THREE.Color(0x3498db).multiplyScalar(0.5), 0.2 + Math.random() * 0.2, Math.random() * 300);
+          emitParticle(_ambientOrigin, n.pos, _ambientColor, 0.2 + Math.random() * 0.2, Math.random() * 300);
         }
       }
     }, 800);
@@ -1114,10 +1127,9 @@
       const vis = sp.z > 0 && sp.z < 1;
       const dist = camera.position.distanceTo(n.pos);
       const depthFade = Math.max(0.2, Math.min(1, 1 - (dist - 35) / 65));
-      setLabelPos(n.labels.name, sp.x, sp.y - 24, vis, depthFade);
-      setLabelPos(n.labels.ip, sp.x, sp.y - 12, vis, depthFade * 0.7);
-      setLabelPos(n.labels.status, sp.x, sp.y + 2, vis, depthFade);
-      setLabelPos(n.labels.bw, sp.x, sp.y + 14, vis, depthFade * 0.8);
+      setLabelPos(n.labels.name, sp.x, sp.y - 20, vis, depthFade);
+      setLabelPos(n.labels.ip, sp.x, sp.y - 8, vis, depthFade * 0.7);
+      setLabelPos(n.labels.status, sp.x, sp.y + 6, vis, depthFade);
     }
     // Discovered
     for (const dn of Object.values(discNodes)) {
@@ -1201,7 +1213,7 @@
       if (field) {
         field.rotation.y += 0.2 * dt;
         field.rotation.x += 0.05 * dt;
-        field.material.opacity = 0.03 + 0.025 * Math.sin(elapsed * 1.5);
+        field.material.opacity = 0.05 + 0.04 * Math.sin(elapsed * 1.5);
       }
     }
 
@@ -1213,17 +1225,17 @@
       if (n.status === 'fail') {
         // Fail pulse — glow
         const pulse = 0.5 + 0.5 * Math.sin(elapsed * 4);
-        n.glow.material.opacity = 0.08 + pulse * 0.22;
-        n.glow.scale.setScalar(1 + pulse * 0.35);
+        n.glow.material.opacity = 0.15 + pulse * 0.35;
+        n.glow.scale.setScalar(1 + pulse * 0.4);
         // Warning ring pulse
         if (n.warnRing) {
           const wp = 0.5 + 0.5 * Math.sin(elapsed * 3);
-          n.warnRing.material.opacity = 0.15 + wp * 0.25;
-          n.warnRing.scale.setScalar(1 + wp * 0.15);
+          n.warnRing.material.opacity = 0.25 + wp * 0.35;
+          n.warnRing.scale.setScalar(1 + wp * 0.2);
           n.warnRing.rotation.z += 1.5 * dt;
         }
         // Sphere throb
-        const throb = 1 + 0.05 * Math.sin(elapsed * 6);
+        const throb = 1 + 0.08 * Math.sin(elapsed * 6);
         n.sphere.scale.setScalar(throb);
       } else {
         // Reset warning ring when OK

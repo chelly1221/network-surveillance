@@ -847,7 +847,7 @@ tr.log-error:hover {
   display: none;
   position: relative;
   overflow: hidden;
-  background: #080c14;
+  background: #060a12;
 }
 
 .view-3d.active {
@@ -882,7 +882,7 @@ tr.log-error:hover {
   font-size: 10px;
   font-family: 'Pretendard', 'Segoe UI', monospace;
   white-space: nowrap;
-  text-shadow: 0 0 6px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.9);
+  text-shadow: 0 0 8px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.95);
   pointer-events: none;
   transition: opacity 0.3s;
 }
@@ -891,7 +891,7 @@ tr.log-error:hover {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 1px;
-  text-shadow: 0 0 12px rgba(0,188,212,0.5), 0 0 4px rgba(0,0,0,0.9);
+  text-shadow: 0 0 16px rgba(0,229,255,0.6), 0 0 6px rgba(0,229,255,0.3), 0 0 2px rgba(0,0,0,0.9);
 }
 
 /* Scanline overlay for sci-fi feel */
@@ -943,10 +943,11 @@ tr.log-error:hover {
 /* Improved label readability */
 .v3d-label.name {
   font-size: 11px;
-  font-weight: 500;
-  padding: 1px 5px;
-  background: rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
+  font-weight: 600;
+  padding: 1px 6px;
+  background: rgba(0, 8, 16, 0.6);
+  border-radius: 3px;
+  text-shadow: 0 0 8px currentColor, 0 0 2px rgba(0,0,0,0.9);
 }
 
 .v3d-label.ip {
@@ -960,10 +961,11 @@ tr.log-error:hover {
 
 .v3d-label.status {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   padding: 1px 6px;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 2px;
+  background: rgba(0, 8, 16, 0.55);
+  border-radius: 3px;
+  text-shadow: 0 0 10px currentColor, 0 0 2px rgba(0,0,0,0.9);
 }
 
 .v3d-label.bw {
