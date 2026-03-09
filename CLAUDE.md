@@ -53,6 +53,12 @@ npm start                # 개발 모드 실행
 npm run build            # Windows portable exe 빌드 (dist/PingTester-{version}.exe)
 ```
 
+### WSL2 환경에서 빌드
+WSL2에서는 wine이 없어 직접 `npm run build`가 실패하므로 `cmd.exe`를 경유하여 Windows 네이티브로 빌드:
+```bash
+cmd.exe /c "cd /d C:\code\pingtester && npm run build"
+```
+
 ## 코딩 컨벤션
 - UI 텍스트는 한국어
 - 변수/함수명은 영어 camelCase
