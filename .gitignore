@@ -1,6 +1,9 @@
 node_modules/
 dist/
 build/
+release/
 *.pyc
 __pycache__/
 Thumbs.db
+*.exe
+settings.json

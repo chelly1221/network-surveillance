@@ -20,8 +20,17 @@ contextBridge.exposeInMainWorld('api', {
   onPingResult: (callback) => ipcRenderer.on('ping-result', (_, data) => callback(data)),
   onFailureLog: (callback) => ipcRenderer.on('failure-log', (_, data) => callback(data)),
   onPlaySound: (callback) => ipcRenderer.on('play-sound', (_, path) => callback(path)),
+  onTrafficStats: (callback) => ipcRenderer.on('traffic-stats', (_, data) => callback(data)),
+  onInterNodeStats: (callback) => ipcRenderer.on('internode-stats', (_, data) => callback(data)),
+  onDiscoveredNodes: (callback) => ipcRenderer.on('discovered-nodes', (_, data) => callback(data)),
+  onAsterixFlows: (callback) => ipcRenderer.on('asterix-flows', (_, data) => callback(data)),
+  onCaptureError: (callback) => ipcRenderer.on('capture-error', (_, msg) => callback(msg)),
   onWindowMaximized: (callback) => ipcRenderer.on('window-maximized', () => callback()),
   onWindowUnmaximized: (callback) => ipcRenderer.on('window-unmaximized', () => callback()),
 
+  getLocalIp: () => ipcRenderer.invoke('get-local-ip'),
+  isNpcapAvailable: () => ipcRenderer.invoke('is-npcap-available'),
+  getNetworkInterfaces: () => ipcRenderer.invoke('get-network-interfaces'),
+  saveCaptureSettings: (settings) => ipcRenderer.invoke('save-capture-settings', settings),
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)
 });

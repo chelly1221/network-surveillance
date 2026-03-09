@@ -3,6 +3,8 @@ let settings = {};
 let isRunning = false;
 let failLogs = [];
 let currentView = 'table';
+let npcapAvailable = false;
+let ipToIndex = {};
 
 // DOM Elements
 const targetTableBody = document.getElementById('targetTableBody');
@@ -17,9 +19,38 @@ const alertAudio = document.getElementById('alertAudio');
 async function init() {
   settings = await window.api.getSettings();
   chkMute.checked = settings.mute_state || false;
+  npcapAvailable = await window.api.isNpcapAvailable();
+  buildIpMap();
   renderTargetTable();
   updateTargetCount();
   updateStatusBar();
+  updateNpcapIndicator();
+  // Fetch local IP for 3D hub mapping
+  const lip = await window.api.getLocalIp();
+  if (lip && window.view3d) window.view3d.setLocalIp(lip);
+}
+
+function buildIpMap() {
+  ipToIndex = {};
+  const targets = settings.targets || [];
+  targets.forEach((t, i) => {
+    if (t.address) ipToIndex[t.address] = i;
+  });
+  if (window.view3d) window.view3d.setIpMap(ipToIndex);
+}
+
+function updateNpcapIndicator() {
+  const el = document.getElementById('npcapStatus');
+  if (!el) return;
+  if (npcapAvailable) {
+    el.textContent = 'PCAP';
+    el.className = 'npcap-badge active';
+    el.title = 'Npcap 패킷 캡처 활성';
+  } else {
+    el.textContent = 'PCAP';
+    el.className = 'npcap-badge';
+    el.title = 'Npcap 미설치 - 트래픽 시각화 비활성';
+  }
 }
 
 // --- Target Table ---
@@ -129,10 +160,18 @@ btnStart.addEventListener('click', async () => {
   renderTargetTable();
   updateTargetCount();
   updateStatusBar();
-  if (currentView === '3d') render3dView();
-  const hubSweep = document.getElementById('hubSweep');
-  if (hubSweep) hubSweep.classList.add('active');
+  if (currentView === '3d') {
+    window.view3d.init();
+    if (settings.topology && window.view3d.setTopology) {
+      window.view3d.setTopology(settings.topology);
+    }
+    window.view3d.setTargets(settings.targets || [], ipToIndex);
+    window.view3d.startAmbientFlow();
+  }
   await window.api.startPinging();
+  // Update local IP after capture starts (localIp is set during startCapture)
+  const lip = await window.api.getLocalIp();
+  if (lip && window.view3d) window.view3d.setLocalIp(lip);
 });
 
 btnStop.addEventListener('click', async () => {
@@ -141,8 +180,7 @@ btnStop.addEventListener('click', async () => {
   btnStart.disabled = false;
   btnStop.disabled = true;
   updateStatusBar();
-  const hubSweep = document.getElementById('hubSweep');
-  if (hubSweep) hubSweep.classList.remove('active');
+  if (window.view3d && window.view3d.isActive()) window.view3d.stopAmbientFlow();
   await window.api.stopPinging();
 });
 
@@ -159,11 +197,34 @@ chkMute.addEventListener('change', () => {
 // --- IPC Events ---
 window.api.onPingResult((data) => {
   updateTargetRow(data);
-  update3dNode(data);
+  if (currentView === '3d' && window.view3d.isActive()) {
+    window.view3d.updateNodeStatus(data.index, data.status, data.timestamp);
+    window.view3d.emitPingParticles(data);
+  }
 });
 
 window.api.onFailureLog((data) => {
   addLogEntry(data);
+});
+
+window.api.onTrafficStats((stats) => {
+  if (currentView === '3d' && window.view3d.isActive()) window.view3d.handleTrafficStats(stats);
+});
+
+window.api.onInterNodeStats((flows) => {
+  if (currentView === '3d' && window.view3d.isActive()) window.view3d.handleInterNodeStats(flows);
+});
+
+window.api.onDiscoveredNodes((nodes) => {
+  if (currentView === '3d' && window.view3d.isActive()) window.view3d.handleDiscoveredNodes(nodes);
+});
+
+window.api.onAsterixFlows((flows) => {
+  if (currentView === '3d' && window.view3d.isActive()) window.view3d.handleAsterixFlows(flows);
+});
+
+window.api.onCaptureError((msg) => {
+  console.error('패킷 캡처 오류:', msg);
 });
 
 window.api.onPlaySound((soundPath) => {
@@ -179,10 +240,6 @@ window.api.onPlaySound((soundPath) => {
 
 // --- Modals ---
 function showModal(id) {
-  if (isRunning) {
-    alert('프로그램이 실행 중입니다. 설정을 변경하려면 먼저 정지하세요.');
-    return false;
-  }
   document.getElementById(id).classList.add('show');
   return true;
 }
@@ -221,10 +278,14 @@ document.getElementById('btnSaveTargets').addEventListener('click', async () => 
   });
   settings.targets = targets;
   await window.api.saveSettings({ targets });
+  buildIpMap();
   renderTargetTable();
   updateTargetCount();
-  if (currentView === '3d') render3dView();
+  if (currentView === '3d' && window.view3d.isActive()) {
+    window.view3d.setTargets(settings.targets || [], ipToIndex);
+  }
   hideModal('targetModal');
+  if (isRunning) alert('감시대상 변경은 정지 후 재시작 시 반영됩니다.');
 });
 
 document.getElementById('btnCancelTargets').addEventListener('click', () => hideModal('targetModal'));
@@ -245,6 +306,7 @@ document.getElementById('btnSaveInterval').addEventListener('click', async () =>
   await window.api.saveSettings({ ping_interval: val });
   updateStatusBar();
   hideModal('intervalModal');
+  if (isRunning) alert('주기 변경은 정지 후 재시작 시 반영됩니다.');
 });
 
 document.getElementById('btnCancelInterval').addEventListener('click', () => hideModal('intervalModal'));
@@ -337,6 +399,194 @@ document.getElementById('btnSaveSound').addEventListener('click', async () => {
 
 document.getElementById('btnCancelSound').addEventListener('click', () => hideModal('soundModal'));
 
+// --- Capture Settings ---
+document.getElementById('menuCapture').addEventListener('click', async () => {
+  if (!showModal('captureModal')) return;
+  const select = document.getElementById('selectCaptureDevice');
+  const infoEl = document.querySelector('#captureDeviceInfo small');
+
+  // Reset options
+  select.innerHTML = '<option value="">자동 감지</option>';
+
+  // Populate network interfaces
+  const interfaces = await window.api.getNetworkInterfaces();
+  for (const iface of interfaces) {
+    const opt = document.createElement('option');
+    opt.value = iface.name;
+    const desc = iface.description || iface.name;
+    const ips = iface.addresses.join(', ');
+    opt.textContent = `${desc} (${ips})`;
+    select.appendChild(opt);
+  }
+
+  // Set current values
+  select.value = settings.capture_device || '';
+
+  // Show device info on change (use onchange to avoid listener accumulation)
+  select.onchange = () => {
+    const dev = interfaces.find(i => i.name === select.value);
+    if (dev) {
+      infoEl.textContent = `장치: ${dev.name}`;
+    } else {
+      infoEl.textContent = '서브넷이 일치하는 어댑터를 자동으로 선택합니다.';
+    }
+  };
+  select.dispatchEvent(new Event('change'));
+});
+
+document.getElementById('btnSaveCapture').addEventListener('click', async () => {
+  const captureDevice = document.getElementById('selectCaptureDevice').value;
+  settings.capture_device = captureDevice;
+  await window.api.saveCaptureSettings({ capture_device: captureDevice, capture_mode: 'all' });
+  hideModal('captureModal');
+});
+
+document.getElementById('btnCancelCapture').addEventListener('click', () => hideModal('captureModal'));
+
+// --- Topology Editor ---
+let topoEditorInited = false;
+let topoResizeObs = null;
+
+document.getElementById('menuTopo').addEventListener('click', () => {
+  if (!showModal('topoModal')) return;
+
+  // Populate target dropdown
+  const sel = document.getElementById('topoPropTarget');
+  sel.innerHTML = '<option value="">— 연결 안함 —</option>';
+  (settings.targets || []).forEach((t, i) => {
+    if (t.name && t.address) {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${t.name} (${t.address})`;
+      sel.appendChild(opt);
+    }
+  });
+
+  // Init canvas editor (re-init each time since destroy() tears it down)
+  const canvasEl = document.getElementById('topoCanvas');
+  if (!topoEditorInited) {
+    window.topoEditor.init(canvasEl, onTopoSelect);
+    topoEditorInited = true;
+  }
+
+  window.topoEditor.load(settings.topology, settings.targets || []);
+  window.topoEditor.setMode('select'); // Reset mode + toolbar
+
+  // Defer resize so the modal is rendered
+  requestAnimationFrame(() => {
+    if (!document.getElementById('topoModal').classList.contains('show')) return;
+    window.topoEditor.resize();
+    window.topoEditor.render();
+  });
+
+  // ResizeObserver for window resize while modal is open
+  if (topoResizeObs) topoResizeObs.disconnect();
+  const wrapEl = document.querySelector('.topo-canvas-wrap');
+  if (wrapEl) {
+    topoResizeObs = new ResizeObserver(() => {
+      if (document.getElementById('topoModal').classList.contains('show') && topoEditorInited) {
+        window.topoEditor.resize();
+      }
+    });
+    topoResizeObs.observe(wrapEl);
+  }
+
+  // Clear property panel
+  onTopoSelect(null);
+});
+
+// Toolbar mode buttons
+document.querySelectorAll('.topo-tool-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const m = btn.dataset.mode;
+    if (m && topoEditorInited) {
+      window.topoEditor.setMode(m);
+    }
+  });
+});
+
+function onTopoSelect(dev) {
+  const nameInput = document.getElementById('topoPropName');
+  const ipInput = document.getElementById('topoPropIp');
+  const targetSel = document.getElementById('topoPropTarget');
+  const propsEl = document.getElementById('topoProps');
+
+  if (!dev) {
+    nameInput.value = '';
+    ipInput.value = '';
+    targetSel.value = '';
+    nameInput.disabled = true;
+    ipInput.disabled = true;
+    targetSel.disabled = true;
+    propsEl.style.opacity = '0.4';
+    propsEl.dataset.devId = '';
+    return;
+  }
+
+  nameInput.disabled = false;
+  ipInput.disabled = false;
+  targetSel.disabled = false;
+  propsEl.style.opacity = '1';
+
+  nameInput.value = dev.name || '';
+  ipInput.value = dev.ip || '';
+  targetSel.value = dev.target_index !== undefined && dev.target_index !== null ? dev.target_index : '';
+
+  // Store selected device id for updates
+  propsEl.dataset.devId = dev.id;
+}
+
+// Property panel live updates
+document.getElementById('topoPropName').addEventListener('input', (e) => {
+  const id = document.getElementById('topoProps').dataset.devId;
+  if (id && topoEditorInited) window.topoEditor.updateDevice(id, { name: e.target.value });
+});
+
+document.getElementById('topoPropIp').addEventListener('input', (e) => {
+  const id = document.getElementById('topoProps').dataset.devId;
+  if (id && topoEditorInited) window.topoEditor.updateDevice(id, { ip: e.target.value });
+});
+
+document.getElementById('topoPropTarget').addEventListener('change', (e) => {
+  const id = document.getElementById('topoProps').dataset.devId;
+  if (!id || !topoEditorInited) return;
+  const val = e.target.value;
+  const idx = val !== '' ? parseInt(val, 10) : undefined;
+  const t = idx !== undefined ? (settings.targets || [])[idx] : null;
+  window.topoEditor.updateDevice(id, {
+    target_index: idx,
+    ip: t ? t.address : document.getElementById('topoPropIp').value,
+    name: t ? t.name : document.getElementById('topoPropName').value
+  });
+  if (t) {
+    document.getElementById('topoPropIp').value = t.address;
+    document.getElementById('topoPropName').value = t.name;
+  }
+});
+
+function closeTopoEditor() {
+  if (topoResizeObs) { topoResizeObs.disconnect(); topoResizeObs = null; }
+  if (topoEditorInited) {
+    window.topoEditor.destroy();
+    topoEditorInited = false;
+  }
+  hideModal('topoModal');
+}
+
+document.getElementById('btnSaveTopo').addEventListener('click', async () => {
+  const topo = window.topoEditor.save();
+  settings.topology = topo;
+  await window.api.saveSettings({ topology: topo });
+  closeTopoEditor();
+  // Apply to 3D view
+  if (currentView === '3d' && window.view3d && window.view3d.isActive() && window.view3d.setTopology) {
+    window.view3d.setTopology(topo);
+    window.view3d.setTargets(settings.targets || [], ipToIndex);
+  }
+});
+
+document.getElementById('btnCancelTopo').addEventListener('click', () => closeTopoEditor());
+
 // --- 3D Network View ---
 function switchView(view) {
   currentView = view;
@@ -346,10 +596,16 @@ function switchView(view) {
   if (view === '3d') {
     tableContainer.style.display = 'none';
     view3d.classList.add('active');
-    render3dView();
+    window.view3d.init();
+    if (settings.topology && window.view3d.setTopology) {
+      window.view3d.setTopology(settings.topology);
+    }
+    window.view3d.setTargets(settings.targets || [], ipToIndex);
+    if (isRunning) window.view3d.startAmbientFlow();
   } else {
     tableContainer.style.display = '';
     view3d.classList.remove('active');
+    window.view3d.dispose();
   }
 
   document.querySelectorAll('.view-toggle-btn').forEach(btn => {
@@ -361,114 +617,7 @@ document.querySelectorAll('.view-toggle-btn').forEach(btn => {
   btn.addEventListener('click', () => switchView(btn.dataset.view));
 });
 
-function calculateNodePositions(count) {
-  const positions = [];
-  if (count <= 10) {
-    for (let i = 0; i < count; i++) {
-      const angle = (2 * Math.PI * i / count) - Math.PI / 2;
-      positions.push({
-        x: 50 + 32 * Math.cos(angle),
-        y: 50 + 35 * Math.sin(angle)
-      });
-    }
-  } else {
-    const inner = Math.min(Math.ceil(count / 2), 8);
-    const outer = count - inner;
-    for (let i = 0; i < inner; i++) {
-      const angle = (2 * Math.PI * i / inner) - Math.PI / 2;
-      positions.push({
-        x: 50 + 21 * Math.cos(angle),
-        y: 50 + 24 * Math.sin(angle)
-      });
-    }
-    for (let i = 0; i < outer; i++) {
-      const angle = (2 * Math.PI * i / outer) - Math.PI / 2 + (Math.PI / outer);
-      positions.push({
-        x: 50 + 39 * Math.cos(angle),
-        y: 50 + 42 * Math.sin(angle)
-      });
-    }
-  }
-  return positions;
-}
-
-function render3dView() {
-  const targets = settings.targets || [];
-  const activeTargets = [];
-  const targetIndices = [];
-  targets.forEach((t, i) => {
-    if (t.name && t.address) {
-      activeTargets.push(t);
-      targetIndices.push(i);
-    }
-  });
-
-  const nodesContainer = document.getElementById('netNodes');
-  const linesContainer = document.getElementById('netLines');
-  nodesContainer.innerHTML = '';
-  linesContainer.innerHTML = '';
-
-  const positions = calculateNodePositions(activeTargets.length);
-
-  activeTargets.forEach((target, i) => {
-    const pos = positions[i];
-    const idx = targetIndices[i];
-    const status = target.enabled ? 'idle' : 'disabled';
-
-    // Connection line (SVG)
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', '50%');
-    line.setAttribute('y1', '50%');
-    line.setAttribute('x2', pos.x + '%');
-    line.setAttribute('y2', pos.y + '%');
-    line.setAttribute('class', 'net-line' + (target.enabled ? '' : ' status-disabled'));
-    line.dataset.index = idx;
-    linesContainer.appendChild(line);
-
-    // Node element
-    const node = document.createElement('div');
-    node.className = 'net-node';
-    node.dataset.index = idx;
-    node.dataset.status = status;
-    node.style.left = pos.x + '%';
-    node.style.top = pos.y + '%';
-    node.innerHTML = `
-      <div class="node-beacon"></div>
-      <div class="node-label">
-        <div class="node-name">${escapeHtml(target.name)}</div>
-        <div class="node-ip">${escapeHtml(target.address)}</div>
-        <div class="node-status-text">${target.enabled ? '' : '비활성화'}</div>
-      </div>
-    `;
-    nodesContainer.appendChild(node);
-  });
-}
-
-function update3dNode(data) {
-  const node = document.querySelector(`.net-node[data-index="${data.index}"]`);
-  if (!node) return;
-
-  const status = data.status === '장애' ? 'fail' : 'ok';
-  node.dataset.status = status;
-
-  const statusText = node.querySelector('.node-status-text');
-  if (statusText) statusText.textContent = data.status;
-
-  // Update connection line
-  const line = document.querySelector(`.net-line[data-index="${data.index}"]`);
-  if (line) {
-    line.setAttribute('class', 'net-line status-' + status);
-  }
-
-  // Ping ripple
-  const beacon = node.querySelector('.node-beacon');
-  if (beacon) {
-    const ripple = document.createElement('div');
-    ripple.className = 'ping-ripple';
-    beacon.appendChild(ripple);
-    setTimeout(() => ripple.remove(), 1000);
-  }
-}
+// (Old SVG-based 3D code removed — now using Three.js view3d.js)
 
 // --- Utility ---
 function escapeHtml(str) {
