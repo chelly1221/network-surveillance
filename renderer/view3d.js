@@ -344,7 +344,7 @@
 
   // ===== Particle System (Points-based: 1 draw call) =====
   // Trail system: each particle spawns TRAIL_LEN sub-points
-  const TRAIL_LEN = 4;
+  const TRAIL_LEN = 8;
   const MAX_DRAW = MAX_P * TRAIL_LEN;
 
   function buildParticleSystem() {
@@ -447,7 +447,7 @@
         colArr[idx3] = p.color.r;
         colArr[idx3 + 1] = p.color.g;
         colArr[idx3 + 2] = p.color.b;
-        sizeArr[count] = (tr === 0 ? 8.0 : 5.0 * trailFade) * p.size;
+        sizeArr[count] = (tr === 0 ? 4.0 : 2.5 * trailFade) * p.size;
         opaArr[count] = (0.7 + fade * 0.3) * trailFade;
         count++;
       }
@@ -1301,6 +1301,9 @@
     if (pMat) { pMat.dispose(); pMat = null; }
     pPts = null;
 
+    // Remove hub group from scene explicitly
+    if (hubGroup && scene) scene.remove(hubGroup);
+
     // Dispose scene-level objects (grid, hub, stars, lights)
     for (const item of sceneObjects) {
       if (item.geo) item.geo.dispose();
@@ -1319,6 +1322,11 @@
     if (container) container.innerHTML = '';
     scene = null; camera = null; webgl = null; controls = null;
     hubGroup = null; labelOverlay = null; emptyStateEl = null;
+    // Reset state to prevent stale data on re-init
+    ipMap = {};
+    targets = [];
+    localIp = '';
+    for (const k of Object.keys(discPosCache)) delete discPosCache[k];
   }
 
   // ===== Utility =====

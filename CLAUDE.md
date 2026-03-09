@@ -7,6 +7,7 @@
 ## 기술 스택
 - **Runtime**: Electron (Node.js)
 - **UI**: HTML + CSS (순수 웹 기술, 프레임워크 없음)
+- **3D 시각화**: Three.js (renderer/lib/three.min.js)
 - **Language**: JavaScript (ES Modules in renderer, CommonJS in main)
 - **Build**: electron-builder (Windows portable .exe)
 - **Platform**: Windows only
@@ -15,45 +16,61 @@
 ```
 pingtester/
 ├── CLAUDE.md
+├── README.md
 ├── package.json
-├── main.js              # Electron 메인 프로세스 (ping, UDP, sound, settings)
-├── preload.js           # contextBridge API (main↔renderer IPC)
+├── main.js              # Electron 메인 프로세스 (ping, UDP, sound, settings, packet capture)
+├── preload.js           # contextBridge API (main↔renderer IPC, EVENT_CHANNELS 기반)
 ├── renderer/
-│   ├── index.html       # 메인 UI
+│   ├── index.html       # 메인 UI (테이블 + 3D 뷰, ARIA 접근성 적용)
 │   ├── renderer.js      # UI 로직 및 IPC 호출
-│   └── styles.css       # 스타일시트
+│   ├── styles.css       # 스타일시트 (WCAG AA 대비 준수)
+│   ├── view3d.js        # Three.js 기반 3D 네트워크 시각화
+│   ├── topoEditor.js    # 캔버스 기반 토폴로지 편집기
+│   └── lib/
+│       └── three.min.js # Three.js 라이브러리
 ├── assets/
 │   ├── icon.ico         # 앱 아이콘
 │   ├── app_icon.png     # 앱 아이콘 (PNG)
 │   └── failed.wav       # 경보음 파일
-└── settings.json        # 사용자 설정 (런타임 생성)
+└── settings.json        # 사용자 설정 (런타임 생성, .gitignore에 포함)
 ```
 
 ## 아키텍처 원칙
-- **Main process**: ping 실행, UDP 소켓, 파일 I/O, 사운드 재생 등 시스템 작업 담당
+- **Main process**: ping 실행, UDP 소켓, 파일 I/O, 사운드 재생, 패킷 캡처 등 시스템 작업 담당
 - **Renderer process**: UI 렌더링만 담당, contextBridge를 통해 main과 통신
 - **IPC 통신**: preload.js의 contextBridge로 안전하게 API 노출
+  - `on*` 함수는 unsubscribe 핸들을 반환
+  - `EVENT_CHANNELS` 상수로 이벤트 채널 관리
 - **설정 파일**: exe와 같은 디렉토리의 settings.json (portable 호환)
+  - 저장은 tmp+rename 패턴으로 atomic write
+  - `saveSettings()`는 성공/실패 boolean 반환
+  - 실패 시 in-memory 상태 rollback
 
 ## 빌드 및 실행
 ```bash
-npm install              # 의존성 설치
+npm install              # 의존성 설치 (postinstall에서 네이티브 모듈 자동 rebuild)
 npm start                # 개발 모드 실행
-npm run build            # Windows portable exe 빌드
+npm run build            # Windows portable exe 빌드 (dist/PingTester-{version}.exe)
 ```
 
 ## 코딩 컨벤션
 - UI 텍스트는 한국어
 - 변수/함수명은 영어 camelCase
 - 설정 JSON 키는 snake_case (기존 호환)
-- 에러 처리: 사용자에게 영향 없이 콘솔 로깅
+- 에러 처리: 사용자에게 영향 없이 콘솔 로깅, IPC 반환값으로 실패 전달
 - ping은 Windows `ping -n 1` 명령 사용
+- 주소 검증: `/^[a-zA-Z0-9]+([.\-][a-zA-Z0-9]+)*$/` (main + renderer 양쪽)
+- HTML: 모든 button에 `type="button"`, 모달에 ARIA role, SVG에 `aria-hidden`
+- CSS: WCAG AA 대비 준수, `:focus-visible` 스타일 적용
 
 ## 주요 기능
-1. **감시 대상 관리**: 최대 20개, 활성화/비활성화 가능
-2. **실시간 ping**: 설정 주기(초)마다 각 대상 ping
+1. **감시 대상 관리**: 최대 20개, 활성화/비활성화 가능, 중복 IP 경고
+2. **실시간 ping**: 설정 주기(초)마다 각 대상 ping, 모든 타겟 첫 응답 후 알람 평가
 3. **상태 표시**: 성공(흰색), 장애(빨간색), 비활성화(회색)
-4. **장애 로그**: 최근 100건 표시
+4. **장애 로그**: 최근 100건 표시, 상태 전환 시에만 기록
 5. **UDP 알림**: 장애/정상 시 설정된 주소로 UDP 메시지 전송
 6. **경보음**: 장애 감지 시 WAV 파일 재생 (음소거 가능)
-7. **설정 저장**: JSON 파일로 영속 저장
+7. **설정 저장**: JSON 파일로 영속 저장 (저장 실패 시 rollback)
+8. **3D 네트워크 뷰**: Three.js 방사형 토폴로지, 실시간 트래픽 시각화
+9. **물리 토폴로지 편집**: 캔버스 기반 장비 배치 및 연결 편집
+10. **패킷 캡처**: Npcap 기반 IPv4 트래픽 모니터링, ASTERIX 프로토콜 감지

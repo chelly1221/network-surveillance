@@ -14,29 +14,29 @@
 <div id="titlebar">
   <div class="titlebar-left">
     <div class="titlebar-menu">
-      <button class="titlebar-btn menu-btn" id="menuTargets" title="감시대상 설정">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.5A1.5 1.5 0 012.5 1h3A1.5 1.5 0 017 2.5v3A1.5 1.5 0 015.5 7h-3A1.5 1.5 0 011 5.5v-3zm8 0A1.5 1.5 0 0110.5 1h3A1.5 1.5 0 0115 2.5v3A1.5 1.5 0 0113.5 7h-3A1.5 1.5 0 019 5.5v-3zm-8 8A1.5 1.5 0 012.5 9h3A1.5 1.5 0 017 10.5v3A1.5 1.5 0 015.5 15h-3A1.5 1.5 0 011 13.5v-3zm8 0A1.5 1.5 0 0110.5 9h3a1.5 1.5 0 011.5 1.5v3a1.5 1.5 0 01-1.5 1.5h-3A1.5 1.5 0 019 13.5v-3z"/></svg>
+      <button type="button" class="titlebar-btn menu-btn" id="menuTargets" title="감시대상 설정">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.5A1.5 1.5 0 012.5 1h3A1.5 1.5 0 017 2.5v3A1.5 1.5 0 015.5 7h-3A1.5 1.5 0 011 5.5v-3zm8 0A1.5 1.5 0 0110.5 1h3A1.5 1.5 0 0115 2.5v3A1.5 1.5 0 0113.5 7h-3A1.5 1.5 0 019 5.5v-3zm-8 8A1.5 1.5 0 012.5 9h3A1.5 1.5 0 017 10.5v3A1.5 1.5 0 015.5 15h-3A1.5 1.5 0 011 13.5v-3zm8 0A1.5 1.5 0 0110.5 9h3a1.5 1.5 0 011.5 1.5v3a1.5 1.5 0 01-1.5 1.5h-3A1.5 1.5 0 019 13.5v-3z"/></svg>
         <span>감시대상</span>
       </button>
-      <button class="titlebar-btn menu-btn" id="menuInterval" title="탐색주기 설정">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 00-1 0V8a.5.5 0 00.252.434l3.5 2a.5.5 0 00.496-.868L8 7.71V3.5z"/><path d="M8 16A8 8 0 108 0a8 8 0 000 16zm7-8A7 7 0 111 8a7 7 0 0114 0z"/></svg>
+      <button type="button" class="titlebar-btn menu-btn" id="menuInterval" title="탐색주기 설정">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3.5a.5.5 0 00-1 0V8a.5.5 0 00.252.434l3.5 2a.5.5 0 00.496-.868L8 7.71V3.5z"/><path d="M8 16A8 8 0 108 0a8 8 0 000 16zm7-8A7 7 0 111 8a7 7 0 0114 0z"/></svg>
         <span>주기</span>
       </button>
-      <button class="titlebar-btn menu-btn" id="menuUdp" title="UDP송신 설정">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 4a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H2a2 2 0 01-2-2V4zm2-1a1 1 0 00-1 1v.217l7 4.2 7-4.2V4a1 1 0 00-1-1H2zm13 2.383l-4.708 2.825L15 11.105V5.383zm-.034 6.876L10.93 8.97 8 10.683 5.07 8.97l-4.036 3.29A1 1 0 002 13h12a1 1 0 00.966-.741zM1 11.105l4.708-2.897L1 5.383v5.722z"/></svg>
+      <button type="button" class="titlebar-btn menu-btn" id="menuUdp" title="UDP송신 설정">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M0 4a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H2a2 2 0 01-2-2V4zm2-1a1 1 0 00-1 1v.217l7 4.2 7-4.2V4a1 1 0 00-1-1H2zm13 2.383l-4.708 2.825L15 11.105V5.383zm-.034 6.876L10.93 8.97 8 10.683 5.07 8.97l-4.036 3.29A1 1 0 002 13h12a1 1 0 00.966-.741zM1 11.105l4.708-2.897L1 5.383v5.722z"/></svg>
         <span>UDP</span>
       </button>
-      <button class="titlebar-btn menu-btn" id="menuSound" title="경보소리 설정">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.536 14.01A8.473 8.473 0 0014.026 8a8.473 8.473 0 00-2.49-6.01l-.708.707A7.476 7.476 0 0113.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/><path d="M10.121 12.596A6.48 6.48 0 0012.025 8a6.48 6.48 0 00-1.904-4.596l-.707.707A5.483 5.483 0 0111.025 8a5.483 5.483 0 01-1.61 3.89l.706.706z"/><path d="M8.707 11.182A4.486 4.486 0 0010.025 8a4.486 4.486 0 00-1.318-3.182L8 5.525A3.489 3.489 0 019.025 8 3.49 3.49 0 018 10.475l.707.707zM6.717 3.55A.5.5 0 017 4v8a.5.5 0 01-.812.39L3.825 10.5H1.5A.5.5 0 011 10V6a.5.5 0 01.5-.5h2.325l2.363-1.89a.5.5 0 01.529-.06z"/></svg>
+      <button type="button" class="titlebar-btn menu-btn" id="menuSound" title="경보소리 설정">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.536 14.01A8.473 8.473 0 0014.026 8a8.473 8.473 0 00-2.49-6.01l-.708.707A7.476 7.476 0 0113.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/><path d="M10.121 12.596A6.48 6.48 0 0012.025 8a6.48 6.48 0 00-1.904-4.596l-.707.707A5.483 5.483 0 0111.025 8a5.483 5.483 0 01-1.61 3.89l.706.706z"/><path d="M8.707 11.182A4.486 4.486 0 0010.025 8a4.486 4.486 0 00-1.318-3.182L8 5.525A3.489 3.489 0 019.025 8 3.49 3.49 0 018 10.475l.707.707zM6.717 3.55A.5.5 0 017 4v8a.5.5 0 01-.812.39L3.825 10.5H1.5A.5.5 0 011 10V6a.5.5 0 01.5-.5h2.325l2.363-1.89a.5.5 0 01.529-.06z"/></svg>
         <span>경보</span>
       </button>
-      <button class="titlebar-btn menu-btn" id="menuCapture" title="패킷캡처 설정">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 0a.5.5 0 01.5.5v4A1.5 1.5 0 014.5 6h-4a.5.5 0 010-1h4a.5.5 0 00.5-.5v-4a.5.5 0 01.5-.5zm5 0a.5.5 0 01.5.5v4a.5.5 0 00.5.5h4a.5.5 0 010 1h-4A1.5 1.5 0 0110 4.5v-4a.5.5 0 01.5-.5zM0 10.5a.5.5 0 01.5-.5h4A1.5 1.5 0 016 11.5v4a.5.5 0 01-1 0v-4a.5.5 0 00-.5-.5h-4a.5.5 0 01-.5-.5zm10 1a1.5 1.5 0 011.5-1.5h4a.5.5 0 010 1h-4a.5.5 0 00-.5.5v4a.5.5 0 01-1 0v-4z"/></svg>
+      <button type="button" class="titlebar-btn menu-btn" id="menuCapture" title="패킷캡처 설정">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 0a.5.5 0 01.5.5v4A1.5 1.5 0 014.5 6h-4a.5.5 0 010-1h4a.5.5 0 00.5-.5v-4a.5.5 0 01.5-.5zm5 0a.5.5 0 01.5.5v4a.5.5 0 00.5.5h4a.5.5 0 010 1h-4A1.5 1.5 0 0110 4.5v-4a.5.5 0 01.5-.5zM0 10.5a.5.5 0 01.5-.5h4A1.5 1.5 0 016 11.5v4a.5.5 0 01-1 0v-4a.5.5 0 00-.5-.5h-4a.5.5 0 01-.5-.5zm10 1a1.5 1.5 0 011.5-1.5h4a.5.5 0 010 1h-4a.5.5 0 00-.5.5v4a.5.5 0 01-1 0v-4z"/></svg>
         <span>캡처</span>
       </button>
       <span class="titlebar-separator"></span>
-      <button class="titlebar-btn menu-btn" id="menuTopo" title="물리 토폴로지 편집">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6 1v3H1V1h5zM1 0a1 1 0 00-1 1v3a1 1 0 001 1h5a1 1 0 001-1V1a1 1 0 00-1-1H1zm14 12v3h-5v-3h5zm-5-1a1 1 0 00-1 1v3a1 1 0 001 1h5a1 1 0 001-1v-3a1 1 0 00-1-1h-5zM6 8v7H1V8h5zM1 7a1 1 0 00-1 1v7a1 1 0 001 1h5a1 1 0 001-1V8a1 1 0 00-1-1H1zm14-6v7h-5V1h5zm-5-1a1 1 0 00-1 1v7a1 1 0 001 1h5a1 1 0 001-1V1a1 1 0 00-1-1h-5z"/></svg>
+      <button type="button" class="titlebar-btn menu-btn" id="menuTopo" title="물리 토폴로지 편집">
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6 1v3H1V1h5zM1 0a1 1 0 00-1 1v3a1 1 0 001 1h5a1 1 0 001-1V1a1 1 0 00-1-1H1zm14 12v3h-5v-3h5zm-5-1a1 1 0 00-1 1v3a1 1 0 001 1h5a1 1 0 001-1v-3a1 1 0 00-1-1h-5zM6 8v7H1V8h5zM1 7a1 1 0 00-1 1v7a1 1 0 001 1h5a1 1 0 001-1V8a1 1 0 00-1-1H1zm14-6v7h-5V1h5zm-5-1a1 1 0 00-1 1v7a1 1 0 001 1h5a1 1 0 001-1V1a1 1 0 00-1-1h-5z"/></svg>
         <span>토폴로지</span>
       </button>
     </div>
@@ -46,14 +46,14 @@
   </div>
   <div class="titlebar-right">
     <div class="titlebar-window-controls">
-      <button class="titlebar-btn window-btn" id="btnMinimize" title="최소화">
-        <svg width="12" height="12" viewBox="0 0 12 12"><rect fill="currentColor" width="10" height="1" x="1" y="6"/></svg>
+      <button type="button" class="titlebar-btn window-btn" id="btnMinimize" title="최소화">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><rect fill="currentColor" width="10" height="1" x="1" y="6"/></svg>
       </button>
-      <button class="titlebar-btn window-btn" id="btnMaximize" title="최대화">
-        <svg width="12" height="12" viewBox="0 0 12 12"><rect fill="none" stroke="currentColor" stroke-width="1" width="9" height="9" x="1.5" y="1.5"/></svg>
+      <button type="button" class="titlebar-btn window-btn" id="btnMaximize" title="최대화">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><rect fill="none" stroke="currentColor" stroke-width="1" width="9" height="9" x="1.5" y="1.5"/></svg>
       </button>
-      <button class="titlebar-btn window-btn window-btn-close" id="btnClose" title="닫기">
-        <svg width="12" height="12" viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" stroke-width="1.2"/></svg>
+      <button type="button" class="titlebar-btn window-btn window-btn-close" id="btnClose" title="닫기">
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" stroke-width="1.2"/></svg>
       </button>
     </div>
   </div>
@@ -66,11 +66,11 @@
     <div class="panel-header">
       <span class="panel-header-title">감시 현황</span>
       <div class="view-toggle" id="viewToggle">
-        <button class="view-toggle-btn active" data-view="table" title="테이블 보기">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="14" height="2.5" rx="0.5"/><rect x="0" y="5.5" width="14" height="2.5" rx="0.5"/><rect x="0" y="10" width="14" height="2.5" rx="0.5"/></svg>
+        <button type="button" class="view-toggle-btn active" data-view="table" title="테이블 보기">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="14" height="2.5" rx="0.5"/><rect x="0" y="5.5" width="14" height="2.5" rx="0.5"/><rect x="0" y="10" width="14" height="2.5" rx="0.5"/></svg>
         </button>
-        <button class="view-toggle-btn" data-view="3d" title="3D 네트워크 보기">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-width="1"><circle cx="7" cy="2.5" r="2" stroke="none"/><circle cx="2.5" cy="11.5" r="2" stroke="none"/><circle cx="11.5" cy="11.5" r="2" stroke="none"/><line x1="7" y1="4.5" x2="2.5" y2="9.5" fill="none"/><line x1="7" y1="4.5" x2="11.5" y2="9.5" fill="none"/><line x1="4.5" y1="11.5" x2="9.5" y2="11.5" fill="none"/></svg>
+        <button type="button" class="view-toggle-btn" data-view="3d" title="3D 네트워크 보기">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-width="1"><circle cx="7" cy="2.5" r="2" stroke="none"/><circle cx="2.5" cy="11.5" r="2" stroke="none"/><circle cx="11.5" cy="11.5" r="2" stroke="none"/><line x1="7" y1="4.5" x2="2.5" y2="9.5" fill="none"/><line x1="7" y1="4.5" x2="11.5" y2="9.5" fill="none"/><line x1="4.5" y1="11.5" x2="9.5" y2="11.5" fill="none"/></svg>
         </button>
       </div>
       <span class="panel-header-badge" id="targetCount">0개 대상</span>
@@ -79,10 +79,10 @@
       <table>
         <thead>
           <tr>
-            <th>장치 이름</th>
-            <th>주소</th>
-            <th>상태</th>
-            <th>최종갱신시각</th>
+            <th scope="col">장치 이름</th>
+            <th scope="col">주소</th>
+            <th scope="col">상태</th>
+            <th scope="col">최종갱신시각</th>
           </tr>
         </thead>
         <tbody id="targetTableBody">
@@ -95,19 +95,19 @@
     </div>
     <div class="panel-footer">
       <div class="control-group">
-        <button class="btn btn-primary" id="btnStart">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M11.596 8.697l-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 010 1.393z"/></svg>
+        <button type="button" class="btn btn-primary" id="btnStart">
+          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M11.596 8.697l-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 010 1.393z"/></svg>
           시작
         </button>
-        <button class="btn btn-danger" id="btnStop" disabled>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+        <button type="button" class="btn btn-danger" id="btnStop" disabled>
+          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
           정지
         </button>
       </div>
       <label class="mute-toggle">
-        <input type="checkbox" id="chkMute">
-        <svg class="icon-mute-off" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.536 14.01A8.473 8.473 0 0014.026 8a8.473 8.473 0 00-2.49-6.01l-.708.707A7.476 7.476 0 0113.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/><path d="M10.121 12.596A6.48 6.48 0 0012.025 8a6.48 6.48 0 00-1.904-4.596l-.707.707A5.483 5.483 0 0111.025 8a5.483 5.483 0 01-1.61 3.89l.706.706z"/><path d="M6.717 3.55A.5.5 0 017 4v8a.5.5 0 01-.812.39L3.825 10.5H1.5A.5.5 0 011 10V6a.5.5 0 01.5-.5h2.325l2.363-1.89a.5.5 0 01.529-.06z"/></svg>
-        <svg class="icon-mute-on" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6.717 3.55A.5.5 0 017 4v8a.5.5 0 01-.812.39L3.825 10.5H1.5A.5.5 0 011 10V6a.5.5 0 01.5-.5h2.325l2.363-1.89a.5.5 0 01.529-.06z"/><path d="M11.241 9.828a.5.5 0 00.707-.707L10.12 7.293l1.828-1.828a.5.5 0 00-.707-.707L9.414 6.586 7.586 4.758a.5.5 0 10-.707.707L8.707 7.293 6.879 9.121a.5.5 0 00.707.707l1.828-1.828 1.828 1.828z"/></svg>
+        <input type="checkbox" id="chkMute" class="sr-only">
+        <svg aria-hidden="true" class="icon-mute-off" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.536 14.01A8.473 8.473 0 0014.026 8a8.473 8.473 0 00-2.49-6.01l-.708.707A7.476 7.476 0 0113.025 8c0 2.071-.84 3.946-2.197 5.303l.708.707z"/><path d="M10.121 12.596A6.48 6.48 0 0012.025 8a6.48 6.48 0 00-1.904-4.596l-.707.707A5.483 5.483 0 0111.025 8a5.483 5.483 0 01-1.61 3.89l.706.706z"/><path d="M6.717 3.55A.5.5 0 017 4v8a.5.5 0 01-.812.39L3.825 10.5H1.5A.5.5 0 011 10V6a.5.5 0 01.5-.5h2.325l2.363-1.89a.5.5 0 01.529-.06z"/></svg>
+        <svg aria-hidden="true" class="icon-mute-on" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6.717 3.55A.5.5 0 017 4v8a.5.5 0 01-.812.39L3.825 10.5H1.5A.5.5 0 011 10V6a.5.5 0 01.5-.5h2.325l2.363-1.89a.5.5 0 01.529-.06z"/><path d="M11.241 9.828a.5.5 0 00.707-.707L10.12 7.293l1.828-1.828a.5.5 0 00-.707-.707L9.414 6.586 7.586 4.758a.5.5 0 10-.707.707L8.707 7.293 6.879 9.121a.5.5 0 00.707.707l1.828-1.828 1.828 1.828z"/></svg>
         <span>음소거</span>
       </label>
     </div>
@@ -117,8 +117,8 @@
   <div class="panel panel-right">
     <div class="panel-header">
       <span class="panel-header-title">장애 로그</span>
-      <button class="btn btn-sm" id="btnClearLogs">
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 01-1 1H13v9a2 2 0 01-2 2H5a2 2 0 01-2-2V4h-.5a1 1 0 01-1-1V2a1 1 0 011-1H5.5l1-1h3l1 1h2.5a1 1 0 011 1v1zM4.118 4L4 4.059V13a1 1 0 001 1h6a1 1 0 001-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+      <button type="button" class="btn btn-sm" id="btnClearLogs">
+        <svg aria-hidden="true" width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 01-1 1H13v9a2 2 0 01-2 2H5a2 2 0 01-2-2V4h-.5a1 1 0 01-1-1V2a1 1 0 011-1H5.5l1-1h3l1 1h2.5a1 1 0 011 1v1zM4.118 4L4 4.059V13a1 1 0 001 1h6a1 1 0 001-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
         초기화
       </button>
     </div>
@@ -126,10 +126,10 @@
       <table>
         <thead>
           <tr>
-            <th>시각</th>
-            <th>장치 이름</th>
-            <th>주소</th>
-            <th>상태</th>
+            <th scope="col">시각</th>
+            <th scope="col">장치 이름</th>
+            <th scope="col">주소</th>
+            <th scope="col">상태</th>
           </tr>
         </thead>
         <tbody id="logTableBody">
@@ -153,8 +153,8 @@
 </div>
 
 <!-- Target Settings Modal -->
-<div class="modal-overlay" id="targetModal">
-  <div class="modal" style="width: 520px;">
+<div class="modal-overlay" id="targetModal" role="dialog" aria-modal="true">
+  <div class="modal" style="width: 520px; max-width: calc(100vw - 32px);">
     <div class="modal-header">
       <h3>감시대상 설정</h3>
       <p>최대 20개의 감시 대상을 설정할 수 있습니다.</p>
@@ -168,9 +168,9 @@
         </colgroup>
         <thead>
           <tr>
-            <th>활성화</th>
-            <th>장치</th>
-            <th>주소</th>
+            <th scope="col">활성화</th>
+            <th scope="col">장치</th>
+            <th scope="col">주소</th>
           </tr>
         </thead>
         <tbody id="targetSettingsBody">
@@ -178,34 +178,34 @@
       </table>
     </div>
     <div class="modal-footer">
-      <button class="btn" id="btnCancelTargets">취소</button>
-      <button class="btn btn-primary" id="btnSaveTargets">저장</button>
+      <button type="button" class="btn" id="btnCancelTargets">취소</button>
+      <button type="button" class="btn btn-primary" id="btnSaveTargets">저장</button>
     </div>
   </div>
 </div>
 
 <!-- Interval Settings Modal -->
-<div class="modal-overlay" id="intervalModal">
-  <div class="modal" style="width: 320px;">
+<div class="modal-overlay" id="intervalModal" role="dialog" aria-modal="true">
+  <div class="modal" style="width: 320px; max-width: calc(100vw - 32px);">
     <div class="modal-header">
       <h3>탐색주기 설정</h3>
     </div>
     <div class="modal-body">
       <div class="form-row">
-        <label>탐색주기 (초)</label>
-        <input type="number" id="inputInterval" min="1" value="1" style="width: 80px;">
+        <label for="inputInterval">탐색주기 (초)</label>
+        <input type="number" id="inputInterval" min="1" max="3600" value="1" style="width: 80px;">
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn" id="btnCancelInterval">취소</button>
-      <button class="btn btn-primary" id="btnSaveInterval">저장</button>
+      <button type="button" class="btn" id="btnCancelInterval">취소</button>
+      <button type="button" class="btn btn-primary" id="btnSaveInterval">저장</button>
     </div>
   </div>
 </div>
 
 <!-- UDP Settings Modal -->
-<div class="modal-overlay" id="udpModal">
-  <div class="modal" style="width: 400px;">
+<div class="modal-overlay" id="udpModal" role="dialog" aria-modal="true">
+  <div class="modal" style="width: 400px; max-width: calc(100vw - 32px);">
     <div class="modal-header">
       <h3>UDP 송신 설정</h3>
     </div>
@@ -214,32 +214,32 @@
         <label style="min-width: auto;"><input type="checkbox" id="chkUdpEnabled"> UDP송신 활성화</label>
       </div>
       <div class="form-row">
-        <label>IP 주소:</label>
+        <label for="inputUdpIp">IP 주소:</label>
         <input type="text" id="inputUdpIp">
       </div>
       <div class="form-row">
-        <label>포트:</label>
-        <input type="text" id="inputUdpPort">
+        <label for="inputUdpPort">포트:</label>
+        <input type="number" id="inputUdpPort" min="1" max="65535">
       </div>
       <div class="form-row">
-        <label>송신 내용 (장애 시):</label>
+        <label for="inputUdpMessage">송신 내용 (장애 시):</label>
         <input type="text" id="inputUdpMessage">
       </div>
       <div class="form-row">
-        <label>송신 내용 (정상 시):</label>
+        <label for="inputUdpNoFailure">송신 내용 (정상 시):</label>
         <input type="text" id="inputUdpNoFailure">
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn" id="btnCancelUdp">취소</button>
-      <button class="btn btn-primary" id="btnSaveUdp">저장</button>
+      <button type="button" class="btn" id="btnCancelUdp">취소</button>
+      <button type="button" class="btn btn-primary" id="btnSaveUdp">저장</button>
     </div>
   </div>
 </div>
 
 <!-- Sound Settings Modal -->
-<div class="modal-overlay" id="soundModal">
-  <div class="modal" style="width: 440px;">
+<div class="modal-overlay" id="soundModal" role="dialog" aria-modal="true">
+  <div class="modal" style="width: 440px; max-width: calc(100vw - 32px);">
     <div class="modal-header">
       <h3>경보소리 설정</h3>
     </div>
@@ -248,30 +248,30 @@
         <label style="min-width: auto;"><input type="checkbox" id="chkSoundEnabled"> 경보음 활성화</label>
       </div>
       <div class="form-row">
-        <label>경보음 파일:</label>
+        <label for="inputSoundFile">경보음 파일:</label>
         <input type="text" id="inputSoundFile" readonly style="flex:1;">
-        <button class="btn btn-sm" id="btnBrowseSound">찾아보기</button>
+        <button type="button" class="btn btn-sm" id="btnBrowseSound">찾아보기</button>
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn" id="btnTestSound">테스트</button>
-      <button class="btn" id="btnCancelSound">취소</button>
-      <button class="btn btn-primary" id="btnSaveSound">저장</button>
+      <button type="button" class="btn" id="btnTestSound">테스트</button>
+      <button type="button" class="btn" id="btnCancelSound">취소</button>
+      <button type="button" class="btn btn-primary" id="btnSaveSound">저장</button>
     </div>
   </div>
 </div>
 
 <!-- Capture Settings Modal -->
-<div class="modal-overlay" id="captureModal">
-  <div class="modal" style="width: 460px;">
+<div class="modal-overlay" id="captureModal" role="dialog" aria-modal="true">
+  <div class="modal" style="width: 460px; max-width: calc(100vw - 32px);">
     <div class="modal-header">
       <h3>패킷캡처 설정</h3>
       <p>네트워크 어댑터와 캡처 범위를 설정합니다.</p>
     </div>
     <div class="modal-body">
       <div class="form-row">
-        <label>네트워크 어댑터:</label>
-        <select id="selectCaptureDevice" style="flex:1; padding: 4px 8px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px;">
+        <label for="selectCaptureDevice">네트워크 어댑터:</label>
+        <select id="selectCaptureDevice" style="flex:1; padding: 4px 8px; background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: 4px;">
           <option value="">자동 감지</option>
         </select>
       </div>
@@ -283,14 +283,14 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn" id="btnCancelCapture">취소</button>
-      <button class="btn btn-primary" id="btnSaveCapture">저장</button>
+      <button type="button" class="btn" id="btnCancelCapture">취소</button>
+      <button type="button" class="btn btn-primary" id="btnSaveCapture">저장</button>
     </div>
   </div>
 </div>
 
 <!-- Topology Editor Modal -->
-<div class="modal-overlay" id="topoModal">
+<div class="modal-overlay" id="topoModal" role="dialog" aria-modal="true">
   <div class="modal topo-modal">
     <div class="modal-header">
       <h3>물리 토폴로지 편집</h3>
@@ -298,34 +298,34 @@
     </div>
     <div class="modal-body" style="padding: 0; display: flex; flex-direction: column; min-height: 0;">
       <div class="topo-toolbar">
-        <button class="topo-tool-btn active" data-mode="select" title="선택/이동">
-          <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 1l9 5.5L7.5 8l-1 4.5L2 1z" fill="currentColor"/></svg>
+        <button type="button" class="topo-tool-btn active" data-mode="select" title="선택/이동">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><path d="M2 1l9 5.5L7.5 8l-1 4.5L2 1z" fill="currentColor"/></svg>
           선택
         </button>
         <span class="topo-sep"></span>
-        <button class="topo-tool-btn" data-mode="add_router" title="라우터 추가">
-          <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="7" x2="10" y2="7" stroke="currentColor" stroke-width="1"/><line x1="7" y1="4" x2="7" y2="10" stroke="currentColor" stroke-width="1"/></svg>
+        <button type="button" class="topo-tool-btn" data-mode="add_router" title="라우터 추가">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="7" x2="10" y2="7" stroke="currentColor" stroke-width="1"/><line x1="7" y1="4" x2="7" y2="10" stroke="currentColor" stroke-width="1"/></svg>
           라우터
         </button>
-        <button class="topo-tool-btn" data-mode="add_switch" title="스위치/허브 추가">
-          <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="3.5" width="12" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="0.8"/><line x1="4" y1="8.5" x2="10" y2="8.5" stroke="currentColor" stroke-width="0.8"/></svg>
+        <button type="button" class="topo-tool-btn" data-mode="add_switch" title="스위치/허브 추가">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="3.5" width="12" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="6" x2="10" y2="6" stroke="currentColor" stroke-width="0.8"/><line x1="4" y1="8.5" x2="10" y2="8.5" stroke="currentColor" stroke-width="0.8"/></svg>
           스위치
         </button>
-        <button class="topo-tool-btn" data-mode="add_pc" title="PC 추가">
-          <svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="7" y1="9" x2="7" y2="11" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="11" x2="10" y2="11" stroke="currentColor" stroke-width="1.2"/></svg>
+        <button type="button" class="topo-tool-btn" data-mode="add_pc" title="PC 추가">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="2" width="10" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="7" y1="9" x2="7" y2="11" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="11" x2="10" y2="11" stroke="currentColor" stroke-width="1.2"/></svg>
           PC
         </button>
-        <button class="topo-tool-btn" data-mode="add_server" title="서버 추가">
-          <svg width="14" height="14" viewBox="0 0 14 14"><rect x="3" y="1" width="8" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="5" y1="4" x2="9" y2="4" stroke="currentColor" stroke-width="0.8"/><line x1="5" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="0.8"/><line x1="5" y1="10" x2="9" y2="10" stroke="currentColor" stroke-width="0.8"/></svg>
+        <button type="button" class="topo-tool-btn" data-mode="add_server" title="서버 추가">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><rect x="3" y="1" width="8" height="12" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="5" y1="4" x2="9" y2="4" stroke="currentColor" stroke-width="0.8"/><line x1="5" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="0.8"/><line x1="5" y1="10" x2="9" y2="10" stroke="currentColor" stroke-width="0.8"/></svg>
           서버
         </button>
         <span class="topo-sep"></span>
-        <button class="topo-tool-btn" data-mode="connect" title="연결선 그리기">
-          <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="3" cy="3" r="1.8" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="11" r="1.8" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="4.5" y1="4.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.2"/></svg>
+        <button type="button" class="topo-tool-btn" data-mode="connect" title="연결선 그리기">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><circle cx="3" cy="3" r="1.8" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="11" r="1.8" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="4.5" y1="4.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.2"/></svg>
           연결
         </button>
-        <button class="topo-tool-btn" data-mode="delete" title="삭제">
-          <svg width="14" height="14" viewBox="0 0 14 14"><line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" stroke-width="1.5"/><line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" stroke-width="1.5"/></svg>
+        <button type="button" class="topo-tool-btn" data-mode="delete" title="삭제">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" stroke-width="1.5"/><line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" stroke-width="1.5"/></svg>
           삭제
         </button>
       </div>
@@ -350,8 +350,8 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn" id="btnCancelTopo">취소</button>
-      <button class="btn btn-primary" id="btnSaveTopo">저장</button>
+      <button type="button" class="btn" id="btnCancelTopo">취소</button>
+      <button type="button" class="btn btn-primary" id="btnSaveTopo">저장</button>
     </div>
   </div>
 </div>

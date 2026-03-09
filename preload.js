@@ -1,5 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const EVENT_CHANNELS = [
+  'ping-result', 'failure-log', 'play-sound', 'traffic-stats',
+  'internode-stats', 'discovered-nodes', 'asterix-flows', 'capture-error',
+  'window-maximized', 'window-unmaximized'
+];
+
+function onEvent(channel, callback) {
+  if (typeof callback !== 'function') return () => {};
+  const listener = (_, ...args) => callback(...args);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
 contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
@@ -17,25 +30,24 @@ contextBridge.exposeInMainWorld('api', {
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
 
   // Events from main process
-  onPingResult: (callback) => ipcRenderer.on('ping-result', (_, data) => callback(data)),
-  onFailureLog: (callback) => ipcRenderer.on('failure-log', (_, data) => callback(data)),
-  onPlaySound: (callback) => ipcRenderer.on('play-sound', (_, path) => callback(path)),
-  onTrafficStats: (callback) => ipcRenderer.on('traffic-stats', (_, data) => callback(data)),
-  onInterNodeStats: (callback) => ipcRenderer.on('internode-stats', (_, data) => callback(data)),
-  onDiscoveredNodes: (callback) => ipcRenderer.on('discovered-nodes', (_, data) => callback(data)),
-  onAsterixFlows: (callback) => ipcRenderer.on('asterix-flows', (_, data) => callback(data)),
-  onCaptureError: (callback) => ipcRenderer.on('capture-error', (_, msg) => callback(msg)),
-  onWindowMaximized: (callback) => ipcRenderer.on('window-maximized', () => callback()),
-  onWindowUnmaximized: (callback) => ipcRenderer.on('window-unmaximized', () => callback()),
+  onPingResult: (callback) => onEvent('ping-result', callback),
+  onFailureLog: (callback) => onEvent('failure-log', callback),
+  onPlaySound: (callback) => onEvent('play-sound', callback),
+  onTrafficStats: (callback) => onEvent('traffic-stats', callback),
+  onInterNodeStats: (callback) => onEvent('internode-stats', callback),
+  onDiscoveredNodes: (callback) => onEvent('discovered-nodes', callback),
+  onAsterixFlows: (callback) => onEvent('asterix-flows', callback),
+  onCaptureError: (callback) => onEvent('capture-error', callback),
+  onWindowMaximized: (callback) => onEvent('window-maximized', callback),
+  onWindowUnmaximized: (callback) => onEvent('window-unmaximized', callback),
 
   getLocalIp: () => ipcRenderer.invoke('get-local-ip'),
   isNpcapAvailable: () => ipcRenderer.invoke('is-npcap-available'),
   getNetworkInterfaces: () => ipcRenderer.invoke('get-network-interfaces'),
   saveCaptureSettings: (settings) => ipcRenderer.invoke('save-capture-settings', settings),
   removeAllListeners: (channel) => {
-    const allowed = ['ping-result', 'failure-log', 'play-sound', 'traffic-stats',
-      'internode-stats', 'discovered-nodes', 'asterix-flows', 'capture-error',
-      'window-maximized', 'window-unmaximized'];
-    if (allowed.includes(channel)) ipcRenderer.removeAllListeners(channel);
+    if (typeof channel === 'string' && EVENT_CHANNELS.includes(channel)) {
+      ipcRenderer.removeAllListeners(channel);
+    }
   }
 });

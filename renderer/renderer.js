@@ -17,17 +17,28 @@ const alertAudio = document.getElementById('alertAudio');
 
 // --- Initialize ---
 async function init() {
-  settings = await window.api.getSettings();
+  try {
+    settings = await window.api.getSettings();
+  } catch (e) {
+    console.error('Failed to load settings:', e);
+    settings = { targets: [], ping_interval: 1, mute_state: false, sound_enabled: true, sound_file: '', udp_enabled: false };
+  }
   chkMute.checked = settings.mute_state || false;
-  npcapAvailable = await window.api.isNpcapAvailable();
+  try {
+    npcapAvailable = await window.api.isNpcapAvailable();
+  } catch (e) {
+    npcapAvailable = false;
+  }
   buildIpMap();
   renderTargetTable();
   updateTargetCount();
   updateStatusBar();
   updateNpcapIndicator();
   // Fetch local IP for 3D hub mapping
-  const lip = await window.api.getLocalIp();
-  if (lip && window.view3d) window.view3d.setLocalIp(lip);
+  try {
+    const lip = await window.api.getLocalIp();
+    if (lip && window.view3d) window.view3d.setLocalIp(lip);
+  } catch (e) {}
 }
 
 function buildIpMap() {
@@ -93,15 +104,17 @@ function updateTargetCount() {
 function updateTargetRow(data) {
   const tr = document.getElementById(`target-${data.index}`);
   if (!tr) return;
+  // Don't overwrite disabled targets' styling
+  if (tr.classList.contains('status-disabled')) return;
   tr.className = data.status === '장애' ? 'status-failed' : '';
-  tr.children[2].textContent = data.status;
-  tr.children[3].textContent = data.timestamp;
+  if (tr.children[2]) tr.children[2].textContent = data.status;
+  if (tr.children[3]) tr.children[3].textContent = data.timestamp;
 }
 
 // --- Failure Log ---
 function addLogEntry(data) {
   const tr = document.createElement('tr');
-  tr.className = 'log-error';
+  tr.className = data.status === '정상 복구' ? 'log-recovery' : 'log-error';
   tr.innerHTML = `
     <td>${escapeHtml(data.timestamp)}</td>
     <td>${escapeHtml(data.name)}</td>
@@ -114,8 +127,8 @@ function addLogEntry(data) {
   // Keep max 100
   if (failLogs.length > 100) {
     failLogs.shift();
-    if (logTableBody.firstChild) {
-      logTableBody.removeChild(logTableBody.firstChild);
+    if (logTableBody.firstElementChild) {
+      logTableBody.removeChild(logTableBody.firstElementChild);
     }
   }
 
@@ -143,13 +156,15 @@ function updateStatusBar() {
 }
 
 // Update clock every second
-setInterval(() => {
+function updateClock() {
   const el = document.getElementById('statusTime');
   if (el) {
     const now = new Date();
     el.textContent = now.toLocaleTimeString('ko-KR', { hour12: false });
   }
-}, 1000);
+}
+updateClock();
+setInterval(updateClock, 1000);
 
 // --- Controls ---
 btnStart.addEventListener('click', async () => {
@@ -157,10 +172,18 @@ btnStart.addEventListener('click', async () => {
   isRunning = true;
   btnStart.disabled = true;
   btnStop.disabled = false;
+  // Re-sync settings from main process before starting
+  try {
+    settings = await window.api.getSettings();
+  } catch (e) {
+    console.error('Failed to reload settings:', e);
+  }
+  if (!isRunning) return;  // User clicked stop during await
+  buildIpMap();
   renderTargetTable();
   updateTargetCount();
   updateStatusBar();
-  if (currentView === '3d') {
+  if (currentView === '3d' && window.view3d) {
     window.view3d.init();
     if (settings.topology && window.view3d.setTopology) {
       window.view3d.setTopology(settings.topology);
@@ -168,10 +191,19 @@ btnStart.addEventListener('click', async () => {
     window.view3d.setTargets(settings.targets || [], ipToIndex);
     window.view3d.startAmbientFlow();
   }
-  await window.api.startPinging();
-  // Update local IP after capture starts (localIp is set during startCapture)
-  const lip = await window.api.getLocalIp();
-  if (lip && window.view3d) window.view3d.setLocalIp(lip);
+  try {
+    await window.api.startPinging();
+    if (!isRunning) return;  // User clicked stop during await
+    // Update local IP after capture starts (localIp is set during startCapture)
+    const lip = await window.api.getLocalIp();
+    if (lip && window.view3d) window.view3d.setLocalIp(lip);
+  } catch (e) {
+    console.error('Failed to start pinging:', e);
+    isRunning = false;
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    updateStatusBar();
+  }
 });
 
 btnStop.addEventListener('click', async () => {
@@ -181,7 +213,11 @@ btnStop.addEventListener('click', async () => {
   btnStop.disabled = true;
   updateStatusBar();
   if (window.view3d && window.view3d.isActive()) window.view3d.stopAmbientFlow();
-  await window.api.stopPinging();
+  try {
+    await window.api.stopPinging();
+  } catch (e) {
+    console.error('Failed to stop pinging:', e);
+  }
 });
 
 btnClearLogs.addEventListener('click', () => {
@@ -189,12 +225,28 @@ btnClearLogs.addEventListener('click', () => {
   logTableBody.innerHTML = '';
 });
 
-chkMute.addEventListener('change', () => {
-  settings.mute_state = chkMute.checked;
-  window.api.updateMute(chkMute.checked);
+chkMute.addEventListener('change', async () => {
+  const newState = chkMute.checked;
+  settings.mute_state = newState;
+  try {
+    const result = await window.api.updateMute(newState);
+    if (!result) {
+      settings.mute_state = !newState;
+      chkMute.checked = !newState;
+    }
+  } catch (e) {
+    console.error('Failed to update mute state:', e);
+    settings.mute_state = !newState;
+    chkMute.checked = !newState;
+  }
 });
 
 // --- IPC Events ---
+// Remove old listeners to prevent accumulation on renderer reload
+['ping-result', 'failure-log', 'play-sound', 'traffic-stats',
+ 'internode-stats', 'discovered-nodes', 'asterix-flows', 'capture-error',
+ 'window-maximized', 'window-unmaximized'].forEach(ch => window.api.removeAllListeners(ch));
+
 window.api.onPingResult((data) => {
   updateTargetRow(data);
   if (currentView === '3d' && window.view3d && window.view3d.isActive()) {
@@ -228,9 +280,15 @@ window.api.onCaptureError((msg) => {
 });
 
 window.api.onPlaySound((soundPath) => {
+  if (!soundPath) return;
   try {
-    // Convert file path to file:// URL
-    const fileUrl = 'file:///' + soundPath.replace(/\\/g, '/');
+    // Stop any currently playing audio first to prevent overlapping alarms
+    if (!alertAudio.paused) {
+      alertAudio.pause();
+      alertAudio.currentTime = 0;
+    }
+    // Convert file path to properly encoded file:// URL
+    const fileUrl = 'file:///' + pathToFileUrl(soundPath);
     alertAudio.src = fileUrl;
     alertAudio.play().catch(e => console.error('Sound play error:', e));
   } catch (e) {
@@ -240,13 +298,36 @@ window.api.onPlaySound((soundPath) => {
 
 // --- Modals ---
 function showModal(id) {
-  document.getElementById(id).classList.add('show');
+  const el = document.getElementById(id);
+  if (!el) return false;
+  // Close any other open modals first
+  document.querySelectorAll('.modal-overlay.show').forEach(m => {
+    if (m.id !== id) m.classList.remove('show');
+  });
+  // If already open, don't re-initialize
+  if (el.classList.contains('show')) return false;
+  el.classList.add('show');
   return true;
 }
 
 function hideModal(id) {
-  document.getElementById(id).classList.remove('show');
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('show');
 }
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const open = document.querySelector('.modal-overlay.show');
+    if (!open) return;
+    // Topology modal needs special cleanup
+    if (open.id === 'topoModal' && typeof closeTopoEditor === 'function') {
+      closeTopoEditor();
+    } else {
+      hideModal(open.id);
+    }
+  }
+});
 
 // --- Target Settings ---
 document.getElementById('menuTargets').addEventListener('click', () => {
@@ -276,13 +357,33 @@ document.getElementById('btnSaveTargets').addEventListener('click', async () => 
       targets.push({ name, address, enabled });
     }
   });
-  settings.targets = targets;
-  await window.api.saveSettings({ targets });
-  buildIpMap();
-  renderTargetTable();
-  updateTargetCount();
-  if (currentView === '3d' && window.view3d.isActive()) {
-    window.view3d.setTargets(settings.targets || [], ipToIndex);
+  // Validate addresses
+  const invalidTarget = targets.find(t => !/^[a-zA-Z0-9]+([.\-][a-zA-Z0-9]+)*$/.test(t.address));
+  if (invalidTarget) {
+    alert(`유효하지 않은 주소: ${invalidTarget.address}\nIP 주소 또는 호스트명을 입력하세요.`);
+    return;
+  }
+  // Check for duplicate addresses
+  const addresses = targets.map(t => t.address);
+  const dupes = addresses.filter((a, i) => addresses.indexOf(a) !== i);
+  if (dupes.length > 0) {
+    alert(`중복된 주소가 있습니다: ${[...new Set(dupes)].join(', ')}\n중복 주소의 ping 결과가 정확하지 않을 수 있습니다.`);
+  }
+  try {
+    const saved = await window.api.saveSettings({ targets });
+    if (saved) settings = saved;
+  } catch (e) {
+    console.error('Failed to save targets:', e);
+    alert('설정 저장 실패');
+    return;
+  }
+  if (!isRunning) {
+    buildIpMap();
+    renderTargetTable();
+    updateTargetCount();
+    if (currentView === '3d' && window.view3d && window.view3d.isActive()) {
+      window.view3d.setTargets(settings.targets || [], ipToIndex);
+    }
   }
   hideModal('targetModal');
   if (isRunning) alert('감시대상 변경은 정지 후 재시작 시 반영됩니다.');
@@ -297,13 +398,20 @@ document.getElementById('menuInterval').addEventListener('click', () => {
 });
 
 document.getElementById('btnSaveInterval').addEventListener('click', async () => {
-  const val = parseInt(document.getElementById('inputInterval').value, 10);
-  if (isNaN(val) || val < 1) {
-    alert('주기는 1초 이상이어야 합니다.');
+  const raw = document.getElementById('inputInterval').value.trim();
+  const val = parseInt(raw, 10);
+  if (!/^\d+$/.test(raw) || isNaN(val) || val < 1 || val > 3600) {
+    alert('주기는 1초 이상 3600초(1시간) 이하의 정수여야 합니다.');
     return;
   }
-  settings.ping_interval = val;
-  await window.api.saveSettings({ ping_interval: val });
+  try {
+    const saved = await window.api.saveSettings({ ping_interval: val });
+    if (saved) settings = saved;
+  } catch (e) {
+    console.error('Failed to save interval:', e);
+    alert('설정 저장 실패');
+    return;
+  }
   updateStatusBar();
   hideModal('intervalModal');
   if (isRunning) alert('주기 변경은 정지 후 재시작 시 반영됩니다.');
@@ -324,6 +432,19 @@ document.getElementById('menuUdp').addEventListener('click', () => {
 document.getElementById('btnSaveUdp').addEventListener('click', async () => {
   const ip = document.getElementById('inputUdpIp').value.trim();
   const port = document.getElementById('inputUdpPort').value.trim();
+  const udpEnabled = document.getElementById('chkUdpEnabled').checked;
+
+  // When UDP enabled, require both IP and port
+  if (udpEnabled) {
+    if (!ip) {
+      alert('UDP 활성화 시 IP 주소를 입력하세요.');
+      return;
+    }
+    if (!port) {
+      alert('UDP 활성화 시 포트를 입력하세요.');
+      return;
+    }
+  }
 
   // Validate IP
   if (ip && !isValidIp(ip)) {
@@ -332,21 +453,31 @@ document.getElementById('btnSaveUdp').addEventListener('click', async () => {
   }
 
   // Validate port
+  if (port && !/^\d+$/.test(port)) {
+    alert('포트 번호는 숫자만 입력 가능합니다.');
+    return;
+  }
   const portNum = parseInt(port, 10);
-  if (port && (isNaN(portNum) || portNum < 0 || portNum > 65535)) {
-    alert('포트 번호는 0에서 65535 사이여야 합니다.');
+  if (port && (isNaN(portNum) || portNum < 1 || portNum > 65535)) {
+    alert('포트 번호는 1에서 65535 사이여야 합니다.');
     return;
   }
 
   const udpSettings = {
-    udp_enabled: document.getElementById('chkUdpEnabled').checked,
+    udp_enabled: udpEnabled,
     udp_ip: ip,
-    udp_port: port,
+    udp_port: port ? String(parseInt(port, 10)) : '',
     udp_message: document.getElementById('inputUdpMessage').value,
     udp_no_failure_message: document.getElementById('inputUdpNoFailure').value
   };
-  Object.assign(settings, udpSettings);
-  await window.api.saveSettings(udpSettings);
+  try {
+    const saved = await window.api.saveSettings(udpSettings);
+    if (saved) settings = saved;
+  } catch (e) {
+    console.error('Failed to save UDP settings:', e);
+    alert('설정 저장 실패');
+    return;
+  }
   hideModal('udpModal');
 });
 
@@ -360,9 +491,13 @@ document.getElementById('menuSound').addEventListener('click', () => {
 });
 
 document.getElementById('btnBrowseSound').addEventListener('click', async () => {
-  const filePath = await window.api.browseSoundFile();
-  if (filePath) {
-    document.getElementById('inputSoundFile').value = filePath;
+  try {
+    const filePath = await window.api.browseSoundFile();
+    if (filePath) {
+      document.getElementById('inputSoundFile').value = filePath;
+    }
+  } catch (e) {
+    console.error('Failed to browse sound file:', e);
   }
 });
 
@@ -373,17 +508,27 @@ document.getElementById('btnTestSound').addEventListener('click', async () => {
     return;
   }
   const soundFile = document.getElementById('inputSoundFile').value;
-  if (!soundFile) {
-    alert('경보음 파일을 선택하세요.');
-    return;
-  }
-  // Play directly without saving
-  try {
-    const fileUrl = 'file:///' + soundFile.replace(/\\/g, '/');
-    alertAudio.src = fileUrl;
-    alertAudio.play().catch(e => alert('사운드 재생 실패: ' + e.message));
-  } catch (e) {
-    alert('사운드 재생 실패: ' + e.message);
+  if (soundFile) {
+    // Play selected file directly without saving
+    try {
+      if (!alertAudio.paused) {
+        alertAudio.pause();
+        alertAudio.currentTime = 0;
+      }
+      const fileUrl = 'file:///' + pathToFileUrl(soundFile);
+      alertAudio.src = fileUrl;
+      alertAudio.play().catch(e => alert('사운드 재생 실패: ' + e.message));
+    } catch (e) {
+      alert('사운드 재생 실패: ' + e.message);
+    }
+  } else {
+    // No custom file selected -- use default WAV via main process
+    try {
+      const result = await window.api.testSound();
+      if (!result) alert('재생할 경보음 파일이 없습니다.');
+    } catch (e) {
+      alert('사운드 재생 실패: ' + e.message);
+    }
   }
 });
 
@@ -392,8 +537,14 @@ document.getElementById('btnSaveSound').addEventListener('click', async () => {
     sound_enabled: document.getElementById('chkSoundEnabled').checked,
     sound_file: document.getElementById('inputSoundFile').value
   };
-  Object.assign(settings, soundSettings);
-  await window.api.saveSettings(soundSettings);
+  try {
+    const saved = await window.api.saveSettings(soundSettings);
+    if (saved) settings = saved;
+  } catch (e) {
+    console.error('Failed to save sound settings:', e);
+    alert('설정 저장 실패');
+    return;
+  }
   hideModal('soundModal');
 });
 
@@ -409,7 +560,13 @@ document.getElementById('menuCapture').addEventListener('click', async () => {
   select.innerHTML = '<option value="">자동 감지</option>';
 
   // Populate network interfaces
-  const interfaces = await window.api.getNetworkInterfaces();
+  let interfaces = [];
+  try {
+    interfaces = await window.api.getNetworkInterfaces();
+  } catch (e) {
+    console.error('Failed to get network interfaces:', e);
+    if (infoEl) infoEl.textContent = '네트워크 장치 조회 실패';
+  }
   for (const iface of interfaces) {
     const opt = document.createElement('option');
     opt.value = iface.name;
@@ -424,6 +581,7 @@ document.getElementById('menuCapture').addEventListener('click', async () => {
 
   // Show device info on change (use onchange to avoid listener accumulation)
   select.onchange = () => {
+    if (!infoEl) return;
     const dev = interfaces.find(i => i.name === select.value);
     if (dev) {
       infoEl.textContent = `장치: ${dev.name}`;
@@ -436,8 +594,14 @@ document.getElementById('menuCapture').addEventListener('click', async () => {
 
 document.getElementById('btnSaveCapture').addEventListener('click', async () => {
   const captureDevice = document.getElementById('selectCaptureDevice').value;
-  settings.capture_device = captureDevice;
-  await window.api.saveCaptureSettings({ capture_device: captureDevice, capture_mode: 'all' });
+  try {
+    const saved = await window.api.saveCaptureSettings({ capture_device: captureDevice, capture_mode: 'all' });
+    if (saved) settings = saved;
+  } catch (e) {
+    console.error('Failed to save capture settings:', e);
+    alert('설정 저장 실패');
+    return;
+  }
   hideModal('captureModal');
 });
 
@@ -552,7 +716,9 @@ document.getElementById('topoPropTarget').addEventListener('change', (e) => {
   if (!id || !topoEditorInited) return;
   const val = e.target.value;
   const idx = val !== '' ? parseInt(val, 10) : undefined;
-  const t = idx !== undefined ? (settings.targets || [])[idx] : null;
+  const targets = settings.targets || [];
+  if (idx !== undefined && (idx < 0 || idx >= targets.length)) return;
+  const t = idx !== undefined ? targets[idx] : null;
   window.topoEditor.updateDevice(id, {
     target_index: idx,
     ip: t ? t.address : document.getElementById('topoPropIp').value,
@@ -567,7 +733,7 @@ document.getElementById('topoPropTarget').addEventListener('change', (e) => {
 function closeTopoEditor() {
   if (topoResizeObs) { topoResizeObs.disconnect(); topoResizeObs = null; }
   if (topoEditorInited) {
-    window.topoEditor.destroy();
+    try { window.topoEditor.destroy(); } catch (e) { console.error('Topo editor destroy error:', e); }
     topoEditorInited = false;
   }
   hideModal('topoModal');
@@ -575,8 +741,14 @@ function closeTopoEditor() {
 
 document.getElementById('btnSaveTopo').addEventListener('click', async () => {
   const topo = window.topoEditor.save();
-  settings.topology = topo;
-  await window.api.saveSettings({ topology: topo });
+  try {
+    const saved = await window.api.saveSettings({ topology: topo });
+    if (saved) settings = saved;
+  } catch (e) {
+    console.error('Failed to save topology:', e);
+    alert('설정 저장 실패');
+    return;
+  }
   closeTopoEditor();
   // Apply to 3D view
   if (currentView === '3d' && window.view3d && window.view3d.isActive() && window.view3d.setTopology) {
@@ -596,12 +768,14 @@ function switchView(view) {
   if (view === '3d') {
     tableContainer.style.display = 'none';
     view3d.classList.add('active');
-    window.view3d.init();
-    if (settings.topology && window.view3d.setTopology) {
-      window.view3d.setTopology(settings.topology);
+    if (window.view3d) {
+      window.view3d.init();
+      if (settings.topology && window.view3d.setTopology) {
+        window.view3d.setTopology(settings.topology);
+      }
+      window.view3d.setTargets(settings.targets || [], ipToIndex);
+      if (isRunning) window.view3d.startAmbientFlow();
     }
-    window.view3d.setTargets(settings.targets || [], ipToIndex);
-    if (isRunning) window.view3d.startAmbientFlow();
   } else {
     tableContainer.style.display = '';
     view3d.classList.remove('active');
@@ -620,12 +794,26 @@ document.querySelectorAll('.view-toggle-btn').forEach(btn => {
 // (Old SVG-based 3D code removed — now using Three.js view3d.js)
 
 // --- Utility ---
+function pathToFileUrl(filePath) {
+  const normalized = filePath.replace(/\\/g, '/');
+  // Handle UNC paths (\\server\share -> //server/share)
+  if (normalized.startsWith('//')) {
+    const parts = normalized.slice(2).split('/');
+    return '//' + parts.map(s => encodeURIComponent(s)).join('/');
+  }
+  const parts = normalized.split('/');
+  return parts.map((s, i) => {
+    if (i === 0 && /^[A-Za-z]:$/.test(s)) return s;
+    return encodeURIComponent(s);
+  }).join('/');
+}
+
 function escapeHtml(str) {
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function escapeAttr(str) {
-  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function isValidIp(ip) {
@@ -639,15 +827,15 @@ function isValidIp(ip) {
 
 // --- Window Controls ---
 document.getElementById('btnMinimize').addEventListener('click', () => {
-  window.api.windowMinimize();
+  window.api.windowMinimize().catch(() => {});
 });
 
 document.getElementById('btnMaximize').addEventListener('click', () => {
-  window.api.windowMaximize();
+  window.api.windowMaximize().catch(() => {});
 });
 
 document.getElementById('btnClose').addEventListener('click', () => {
-  window.api.windowClose();
+  window.api.windowClose().catch(() => {});
 });
 
 function setMaximizeIcon(isMaximized) {
@@ -664,13 +852,13 @@ function setMaximizeIcon(isMaximized) {
 
 window.api.onWindowMaximized(() => setMaximizeIcon(true));
 window.api.onWindowUnmaximized(() => setMaximizeIcon(false));
-window.api.windowIsMaximized().then(isMax => setMaximizeIcon(isMax));
+window.api.windowIsMaximized().then(isMax => setMaximizeIcon(isMax)).catch(() => {});
 
 // Double-click titlebar to maximize/restore
 document.getElementById('titlebar').addEventListener('dblclick', (e) => {
   if (e.target.closest('.titlebar-btn')) return;
-  window.api.windowMaximize();
+  window.api.windowMaximize().catch(() => {});
 });
 
 // --- Init ---
-init();
+init().catch(e => console.error('Initialization error:', e));

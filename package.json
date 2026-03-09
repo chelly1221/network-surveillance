@@ -5,9 +5,10 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win portable"
+    "build": "electron-builder --win portable",
+    "postinstall": "electron-builder install-app-deps"
   },
-  "author": "",
+  "author": "김포공항 레이더/관제송신소",
   "license": "UNLICENSED",
   "devDependencies": {
     "electron": "^33.0.0",
@@ -21,13 +22,13 @@
       "icon": "assets/icon.ico"
     },
     "portable": {
-      "artifactName": "PingTester.exe"
+      "artifactName": "PingTester-${version}.exe"
     },
     "files": [
       "main.js",
       "preload.js",
       "renderer/**/*",
-      "assets/**/*"
+      "assets/icon.ico"
     ],
     "asarUnpack": [
       "**/*.node",
@@ -37,6 +38,10 @@
       {
         "from": "assets/failed.wav",
         "to": "failed.wav"
+      },
+      {
+        "from": "assets/icon.ico",
+        "to": "icon.ico"
       }
     ]
   },

@@ -19,7 +19,7 @@
   --border-medium: rgba(255, 255, 255, 0.10);
   --text-primary: #e4e8f1;
   --text-secondary: #8892a8;
-  --text-muted: #555f76;
+  --text-muted: #6b7694;
   --accent-blue: #3498db;
   --accent-blue-hover: #5dade2;
   --accent-green: #2ecc71;
@@ -314,7 +314,6 @@ body {
 .btn:disabled {
   opacity: 0.35;
   cursor: default;
-  pointer-events: none;
 }
 
 .btn svg {
@@ -381,8 +380,16 @@ body {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.mute-toggle input[type="checkbox"] {
-  display: none;
+.mute-toggle input[type="checkbox"].sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Default state: sound on — show mute-off icon, hide mute-on icon */
@@ -447,6 +454,13 @@ table td {
   border-bottom: 1px solid var(--border-subtle);
   font-size: 12px;
   color: var(--text-primary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.panel table td {
+  max-width: 200px;
 }
 
 table tbody tr {
@@ -454,7 +468,7 @@ table tbody tr {
 }
 
 table tbody tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.015);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 table tbody tr:hover {
@@ -479,7 +493,7 @@ tr.status-disabled {
 }
 
 tr.status-disabled td {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 tr.log-error {
@@ -492,6 +506,18 @@ tr.log-error td {
 
 tr.log-error:hover {
   background: rgba(231, 76, 60, 0.18) !important;
+}
+
+tr.log-recovery {
+  background: rgba(46, 204, 113, 0.10) !important;
+}
+
+tr.log-recovery td {
+  color: #7edba8;
+}
+
+tr.log-recovery:hover {
+  background: rgba(46, 204, 113, 0.18) !important;
 }
 
 
@@ -611,7 +637,7 @@ tr.log-error:hover {
 
 .modal-body-table {
   padding: 0;
-  max-height: 50vh;
+  overflow-y: auto;
 }
 
 .modal-footer {
@@ -838,6 +864,11 @@ tr.log-error:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.view-toggle-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+
 
 /* ============================================================
    3D NETWORK VISUALIZATION
@@ -914,8 +945,8 @@ tr.log-error:hover {
 }
 
 @keyframes v3dScanLine {
-  0% { top: 0; }
-  100% { top: 100%; }
+  0% { top: -2px; }
+  100% { top: calc(100% + 2px); }
 }
 
 /* Empty state overlay */
@@ -1013,6 +1044,7 @@ tr.log-error:hover {
    ============================================================ */
 .topo-modal {
   width: 860px;
+  max-width: calc(100vw - 32px);
   max-height: 85vh;
 }
 
@@ -1059,6 +1091,11 @@ tr.log-error:hover {
 
 .topo-tool-btn:active {
   background: rgba(255, 255, 255, 0.10);
+}
+
+.topo-tool-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
 }
 
 .topo-tool-btn.active svg,

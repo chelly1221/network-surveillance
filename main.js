@@ -4,6 +4,14 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const dgram = require('dgram');
 
+// --- Global error handlers (prevent crash on unhandled rejections) ---
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception in main process:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection in main process:', reason);
+});
+
 // --- Packet Capture (Npcap) ---
 let Cap, decoders, PROTOCOL;
 let npcapAvailable = false;
@@ -113,29 +121,62 @@ function loadSettings() {
   };
   try {
     if (fs.existsSync(settingsPath)) {
-      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-      settings = { ...defaults, ...data };
+      let raw = fs.readFileSync(settingsPath, 'utf-8');
+      // Strip UTF-8 BOM (common when edited with Windows Notepad)
+      if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+      try {
+        const data = JSON.parse(raw);
+        settings = { ...defaults, ...data };
+      } catch (parseErr) {
+        console.error('Settings file is malformed, backing up:', parseErr);
+        try {
+          fs.copyFileSync(settingsPath, settingsPath + '.backup_' + Date.now());
+        } catch (backupErr) {
+          console.error('Failed to backup corrupted settings:', backupErr);
+        }
+        settings = { ...defaults };
+      }
+      if (!Array.isArray(settings.targets)) settings.targets = [];
+      // Normalize target entries
+      settings.targets = settings.targets
+        .filter(t => t && typeof t === 'object')
+        .map(t => ({
+          name: String(t.name || '').trim(),
+          address: String(t.address || '').trim(),
+          enabled: t.enabled !== false
+        }));
+      // Validate key types
+      if (typeof settings.ping_interval !== 'number' || settings.ping_interval < 1 || settings.ping_interval > 3600) settings.ping_interval = defaults.ping_interval;
+      if (typeof settings.udp_port !== 'string') settings.udp_port = String(settings.udp_port || defaults.udp_port);
+      if (typeof settings.mute_state !== 'boolean') settings.mute_state = defaults.mute_state;
+      if (typeof settings.udp_enabled !== 'boolean') settings.udp_enabled = defaults.udp_enabled;
+      if (typeof settings.sound_enabled !== 'boolean') settings.sound_enabled = defaults.sound_enabled;
+      if (settings.udp_ip && typeof settings.udp_ip === 'string' && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(settings.udp_ip)) settings.udp_ip = defaults.udp_ip;
+      if (settings.capture_mode && settings.capture_mode !== 'all') settings.capture_mode = defaults.capture_mode;
     } else {
-      settings = defaults;
+      settings = { ...defaults };
     }
   } catch (e) {
     console.error('Failed to load settings:', e);
-    settings = defaults;
+    settings = { ...defaults };
   }
   return settings;
 }
 
 function saveSettings(newSettings) {
-  if (newSettings) {
-    settings = { ...settings, ...newSettings };
-  }
+  const merged = newSettings ? { ...settings, ...newSettings } : { ...settings };
   try {
     const settingsPath = getSettingsPath();
     const tmpPath = settingsPath + '.tmp';
-    fs.writeFileSync(tmpPath, JSON.stringify(settings, null, 4), 'utf-8');
+    fs.writeFileSync(tmpPath, JSON.stringify(merged, null, 4), 'utf-8');
     fs.renameSync(tmpPath, settingsPath);
+    settings = merged;  // Only update in-memory state after successful write
+    return true;
   } catch (e) {
     console.error('Failed to save settings:', e);
+    // Clean up orphaned tmp file
+    try { fs.unlinkSync(getSettingsPath() + '.tmp'); } catch (_) {}
+    return false;
   }
 }
 
@@ -155,19 +196,32 @@ function getSoundFilePath() {
 // --- Ping ---
 function ping(address) {
   return new Promise((resolve) => {
-    if (!/^[a-zA-Z0-9.\-]+$/.test(address)) {
+    if (!/^[a-zA-Z0-9]+([.\-][a-zA-Z0-9]+)*$/.test(address)) {
       resolve(false);
       return;
     }
-    const child = execFile('ping', ['-n', '1', '-w', '4000', address], { timeout: 6000 }, (error, stdout) => {
+    // Safeguard: skip if too many pending processes
+    if (activeChildProcesses.length > 200) {
+      console.warn('Too many pending ping processes, skipping');
+      resolve(false);
+      return;
+    }
+    let resolved = false;
+    const cleanup = (result) => {
+      if (resolved) return;
+      resolved = true;
       const idx = activeChildProcesses.indexOf(child);
       if (idx !== -1) activeChildProcesses.splice(idx, 1);
+      resolve(result);
+    };
+    const child = execFile('ping', ['-n', '1', '-w', '4000', address], { timeout: 5500 }, (error, stdout) => {
       if (error) {
-        resolve(false);
+        cleanup(false);
       } else {
-        resolve(/\bTTL[=]/i.test(stdout));
+        cleanup(/\bTTL[=]/i.test(stdout));
       }
     });
+    child.on('error', () => cleanup(false));
     activeChildProcesses.push(child);
   });
 }
@@ -176,21 +230,41 @@ function ping(address) {
 function sendUdpNotification(message) {
   if (!settings.udp_enabled) return;
   try {
-    const client = dgram.createSocket('udp4');
-    client.on('error', (err) => {
-      console.error('UDP socket error:', err);
-      client.close();
-    });
-    const buf = Buffer.from(message || settings.udp_message);
+    // Validate before creating socket
+    const targetIp = settings.udp_ip;
     const port = parseInt(settings.udp_port, 10);
-    if (isNaN(port) || port < 0 || port > 65535) {
-      client.close();
+    if (isNaN(port) || port < 1 || port > 65535) {
+      console.warn('Invalid UDP port:', settings.udp_port);
       return;
     }
-    client.send(buf, port, settings.udp_ip, (err) => {
-      client.close();
+    if (!targetIp) {
+      console.warn('UDP IP not configured');
+      return;
+    }
+    const msg = message || settings.udp_message;
+    if (!msg) return;
+    const buf = Buffer.from(String(msg));
+
+    const client = dgram.createSocket('udp4');
+    let closed = false;
+    let timeoutHandle = null;
+    const safeClose = () => {
+      if (!closed) {
+        closed = true;
+        if (timeoutHandle) { clearTimeout(timeoutHandle); timeoutHandle = null; }
+        try { client.close(); } catch (e) {}
+      }
+    };
+    client.on('error', (err) => {
+      console.error(`UDP socket error sending to ${targetIp}:${port}:`, err.message);
+      safeClose();
+    });
+    client.send(buf, port, targetIp, (err) => {
+      safeClose();
       if (err) console.error('UDP send error:', err);
     });
+    // Timeout safeguard: force close if send doesn't complete
+    timeoutHandle = setTimeout(() => safeClose(), 3000);
   } catch (e) {
     console.error('UDP error:', e);
   }
@@ -215,6 +289,7 @@ function detectNetworkInterface() {
         const maskParts = addr.netmask.split('.').map(Number);
         for (const tip of targetIps) {
           const tipParts = tip.split('.').map(Number);
+          if (tipParts.length !== 4 || tipParts.some(isNaN)) continue;
           const sameSubnet = localParts.every((lp, i) => (lp & maskParts[i]) === (tipParts[i] & maskParts[i]));
           if (sameSubnet) {
             const allIps = dev.addresses
@@ -269,9 +344,7 @@ function startCapture() {
   }
   if (!netInfo) {
     console.log('No suitable network interface found for capture');
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('capture-error', 'No suitable network interface found for capture');
-    }
+    safeSend('capture-error', 'No suitable network interface found for capture');
     return;
   }
   localIp = netInfo.ip;
@@ -292,6 +365,7 @@ function startCapture() {
 
     cap.on('packet', (nbytes, trunc) => {
       if (linkType !== 'ETHERNET') return;
+      if (nbytes < 14) return;  // Minimum Ethernet frame size
       try {
         let ret = decoders.Ethernet(buffer);
         let ipv4Offset = ret.offset;
@@ -303,6 +377,7 @@ function startCapture() {
           const innerType = buffer.readUInt16BE(ret.offset + 2);
           if (innerType === 0x0800) {
             ipv4Offset = ret.offset + 4; // skip VLAN tag
+            if (nbytes < ipv4Offset + 20) return; // Minimum IPv4 header
             isIPv4 = true;
           }
         }
@@ -477,10 +552,10 @@ function startCapture() {
     trafficTimer = setInterval(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         if (Object.keys(trafficStats).length > 0) {
-          mainWindow.webContents.send('traffic-stats', trafficStats);
+          safeSend('traffic-stats', trafficStats);
         }
         if (Object.keys(interNodeStats).length > 0) {
-          mainWindow.webContents.send('internode-stats', Object.values(interNodeStats));
+          safeSend('internode-stats', Object.values(interNodeStats));
         }
         // Merge current discoveredStats into persistent tracker
         const now = Date.now();
@@ -518,11 +593,11 @@ function startCapture() {
           .sort((a, b) => b.totalBytes - a.totalBytes)
           .slice(0, 30);
         if (recentDiscovered.length > 0) {
-          mainWindow.webContents.send('discovered-nodes', recentDiscovered);
+          safeSend('discovered-nodes', recentDiscovered);
         }
 
         if (Object.keys(asterixFlows).length > 0) {
-          mainWindow.webContents.send('asterix-flows', Object.values(asterixFlows));
+          safeSend('asterix-flows', Object.values(asterixFlows));
         }
       }
       trafficStats = {};
@@ -534,9 +609,7 @@ function startCapture() {
     console.log(`Packet capture started on ${netInfo.ip} (${netInfo.device})`);
   } catch (e) {
     console.error('Failed to start capture:', e);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('capture-error', 'Failed to start capture: ' + (e.message || String(e)));
-    }
+    safeSend('capture-error', 'Failed to start capture: ' + (e.message || String(e)));
   }
 }
 
@@ -558,9 +631,20 @@ function stopCapture() {
   localIps = new Set();
 }
 
+// --- Safe IPC send helper (prevents TOCTOU race on window destruction) ---
+function safeSend(channel, ...args) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      mainWindow.webContents.send(channel, ...args);
+    }
+  } catch (e) {
+    console.error(`Failed to send IPC '${channel}':`, e.message);
+  }
+}
+
 // --- Ping loop ---
 function startPinging() {
-  if (running) return;
+  if (running) stopPinging();  // Clean up before restart
   running = true;
   const myGeneration = ++pingGeneration;
   targetStatus = {};
@@ -573,47 +657,60 @@ function startPinging() {
     if (!target.name || !target.address || !target.enabled) return;
     activeCount++;
 
+    let pingInProgress = false;
     const doPing = async () => {
       if (myGeneration !== pingGeneration) return;
-      const result = await ping(target.address);
-      if (myGeneration !== pingGeneration) return;  // Guard after await
-      const status = result ? '성공' : '장애';
-      const now = new Date();
-      const timestamp = now.toTimeString().split(' ')[0]; // HH:MM:SS
+      if (pingInProgress) return;  // Prevent overlapping pings per target
+      pingInProgress = true;
+      try {
+        const result = await ping(target.address);
+        if (myGeneration !== pingGeneration) return;
+        const status = result ? '성공' : '장애';
+        const now = new Date();
+        const timestamp = now.toTimeString().split(' ')[0]; // HH:MM:SS
 
-      targetStatus[index] = { status, timestamp };
+        const prevStatus = targetStatus[index] ? targetStatus[index].status : null;
+        targetStatus[index] = { status, timestamp };
 
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ping-result', { index, name: target.name, address: target.address, status, timestamp });
-      }
+        safeSend('ping-result', { index, name: target.name, address: target.address, status, timestamp });
 
-      if (status === '장애' && mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('failure-log', { name: target.name, address: target.address, status, timestamp });
+        // Event-based logging: only on state transitions
+        if (prevStatus !== status) {
+          if (status === '장애') {
+            safeSend('failure-log', { name: target.name, address: target.address, status: '장애 발생', timestamp });
+          } else if (prevStatus === '장애') {
+            safeSend('failure-log', { name: target.name, address: target.address, status: '정상 복구', timestamp });
+          }
+        }
+      } finally {
+        pingInProgress = false;
       }
     };
 
     // Run first ping immediately
-    doPing();
-    const timer = setInterval(doPing, interval);
+    doPing().catch(e => console.error('Ping error for', target.address, e));
+    const timer = setInterval(() => {
+      doPing().catch(e => console.error('Ping error for', target.address, e));
+    }, interval);
     pingIntervalTimers.push(timer);
   });
 
-  // Start packet capture alongside pinging
-  startCapture();
+  // Start packet capture alongside pinging (only if there are active targets)
+  if (activeCount > 0) {
+    startCapture();
+  }
 
   if (activeCount > 0) {
     // Alarm loop: check every 3 seconds
     alarmTimer = setInterval(() => {
       const statuses = Object.values(targetStatus);
-      if (statuses.length === 0) return; // No results yet, skip
+      if (statuses.length < activeCount) return; // Wait until all active targets have reported at least once
       const anyFailed = statuses.some(s => s.status === '장애');
       if (anyFailed) {
         // Play sound
         if (!settings.mute_state && settings.sound_enabled) {
           const soundPath = getSoundFilePath();
-          if (soundPath && mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('play-sound', soundPath);
-          }
+          if (soundPath) safeSend('play-sound', soundPath);
         }
         if (settings.udp_enabled) {
           sendUdpNotification(settings.udp_message);
@@ -628,7 +725,9 @@ function startPinging() {
 }
 
 function stopPinging() {
+  if (!running && pingIntervalTimers.length === 0 && activeChildProcesses.length === 0 && !alarmTimer && !captureSession) return;
   running = false;
+  pingGeneration++;  // Invalidate in-flight ping callbacks
   stopCapture();
   pingIntervalTimers.forEach(t => clearInterval(t));
   pingIntervalTimers = [];
@@ -645,11 +744,14 @@ function stopPinging() {
 
 // --- Electron App ---
 function createWindow() {
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.ico')
+    : path.join(__dirname, 'assets', 'icon.ico');
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 600,
     frame: false,
-    icon: path.join(__dirname, 'assets', 'icon.ico'),
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -659,19 +761,30 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  mainWindow.on('maximize', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('window-maximized');
-  });
-  mainWindow.on('unmaximize', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('window-unmaximized');
-  });
+  mainWindow.on('maximize', () => safeSend('window-maximized'));
+  mainWindow.on('unmaximize', () => safeSend('window-unmaximized'));
 
   mainWindow.on('closed', () => {
+    stopPinging();
     mainWindow = null;
   });
 }
 
+// --- Single instance lock ---
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
 app.whenReady().then(() => {
+  if (!gotTheLock) return;
   // 한글 IME 및 키보드 단축키 지원을 위한 메뉴 설정
   const menu = Menu.buildFromTemplate([
     {
@@ -693,6 +806,10 @@ app.whenReady().then(() => {
   createWindow();
 });
 
+app.on('before-quit', () => {
+  stopPinging();
+});
+
 app.on('window-all-closed', () => {
   stopPinging();
   app.quit();
@@ -704,7 +821,39 @@ ipcMain.handle('get-settings', () => {
 });
 
 ipcMain.handle('save-settings', (event, newSettings) => {
-  saveSettings(newSettings);
+  if (!newSettings || typeof newSettings !== 'object' || Array.isArray(newSettings)) {
+    return settings;
+  }
+  // Defense against prototype pollution
+  delete newSettings.__proto__;
+  delete newSettings.constructor;
+  delete newSettings.prototype;
+  // Enforce max 20 targets
+  if (Array.isArray(newSettings.targets)) {
+    newSettings.targets = newSettings.targets.slice(0, 20);
+  }
+  // Validate ping_interval if present
+  if ('ping_interval' in newSettings) {
+    const pi = newSettings.ping_interval;
+    if (typeof pi !== 'number' || !Number.isFinite(pi) || pi < 1 || pi > 3600) {
+      delete newSettings.ping_interval;
+    }
+  }
+  // Validate target addresses
+  if (Array.isArray(newSettings.targets)) {
+    newSettings.targets = newSettings.targets.map(t => {
+      if (!t || typeof t !== 'object') return t;
+      return {
+        ...t,
+        name: typeof t.name === 'string' ? t.name.trim() : '',
+        address: typeof t.address === 'string' ? t.address.trim() : ''
+      };
+    });
+  }
+  const success = saveSettings(newSettings);
+  if (!success) {
+    console.error('save-settings: write to disk failed, returning current in-memory settings');
+  }
   return settings;
 });
 
@@ -734,16 +883,23 @@ ipcMain.handle('browse-sound-file', async () => {
 
 ipcMain.handle('test-sound', () => {
   const soundPath = getSoundFilePath();
-  if (soundPath && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('play-sound', soundPath);
+  if (soundPath) {
+    safeSend('play-sound', soundPath);
     return true;
   }
   return false;
 });
 
 ipcMain.handle('update-mute', (event, mute) => {
+  if (typeof mute !== 'boolean') return false;
+  const oldMute = settings.mute_state;
   settings.mute_state = mute;
-  saveSettings();
+  const success = saveSettings();
+  if (!success) {
+    settings.mute_state = oldMute;  // Rollback on save failure
+    return false;
+  }
+  return true;
 });
 
 ipcMain.handle('get-sound-path', () => {
@@ -794,8 +950,15 @@ ipcMain.handle('get-network-interfaces', () => {
 });
 
 ipcMain.handle('save-capture-settings', (event, captureSettings) => {
+  if (!captureSettings || typeof captureSettings !== 'object') return settings;
+  const oldDevice = settings.capture_device;
+  const oldMode = settings.capture_mode;
   settings.capture_device = captureSettings.capture_device || '';
   settings.capture_mode = captureSettings.capture_mode || 'all';
-  saveSettings();
+  const success = saveSettings();
+  if (!success) {
+    settings.capture_device = oldDevice;  // Rollback on save failure
+    settings.capture_mode = oldMode;
+  }
   return settings;
 });

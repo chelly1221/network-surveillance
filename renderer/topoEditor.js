@@ -38,6 +38,7 @@
 
   // ===== Init =====
   function init(canvasEl, onSelect) {
+    if (canvas) destroy();  // Clean up previous instance to prevent listener leaks
     canvas = canvasEl;
     ctx = canvas.getContext('2d');
     onSelectCb = onSelect;
