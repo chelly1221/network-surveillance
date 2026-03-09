@@ -1,6 +1,6 @@
 # PingTester
 
-김포공항 레이더/관제송신소 네트워크 감시 프로그램
+네트워크 감시 프로그램
 
 ![Platform](https://img.shields.io/badge/platform-Windows-blue)
 ![Electron](https://img.shields.io/badge/Electron-33-47848F)
