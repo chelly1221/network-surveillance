@@ -29,6 +29,10 @@
       "renderer/**/*",
       "assets/**/*"
     ],
+    "asarUnpack": [
+      "**/*.node",
+      "**/cap/**"
+    ],
     "extraResources": [
       {
         "from": "assets/failed.wav",

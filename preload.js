@@ -32,5 +32,10 @@ contextBridge.exposeInMainWorld('api', {
   isNpcapAvailable: () => ipcRenderer.invoke('is-npcap-available'),
   getNetworkInterfaces: () => ipcRenderer.invoke('get-network-interfaces'),
   saveCaptureSettings: (settings) => ipcRenderer.invoke('save-capture-settings', settings),
-  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)
+  removeAllListeners: (channel) => {
+    const allowed = ['ping-result', 'failure-log', 'play-sound', 'traffic-stats',
+      'internode-stats', 'discovered-nodes', 'asterix-flows', 'capture-error',
+      'window-maximized', 'window-unmaximized'];
+    if (allowed.includes(channel)) ipcRenderer.removeAllListeners(channel);
+  }
 });

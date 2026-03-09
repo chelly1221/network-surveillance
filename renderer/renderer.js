@@ -197,7 +197,7 @@ chkMute.addEventListener('change', () => {
 // --- IPC Events ---
 window.api.onPingResult((data) => {
   updateTargetRow(data);
-  if (currentView === '3d' && window.view3d.isActive()) {
+  if (currentView === '3d' && window.view3d && window.view3d.isActive()) {
     window.view3d.updateNodeStatus(data.index, data.status, data.timestamp);
     window.view3d.emitPingParticles(data);
   }
@@ -208,19 +208,19 @@ window.api.onFailureLog((data) => {
 });
 
 window.api.onTrafficStats((stats) => {
-  if (currentView === '3d' && window.view3d.isActive()) window.view3d.handleTrafficStats(stats);
+  if (currentView === '3d' && window.view3d && window.view3d.isActive()) window.view3d.handleTrafficStats(stats);
 });
 
 window.api.onInterNodeStats((flows) => {
-  if (currentView === '3d' && window.view3d.isActive()) window.view3d.handleInterNodeStats(flows);
+  if (currentView === '3d' && window.view3d && window.view3d.isActive()) window.view3d.handleInterNodeStats(flows);
 });
 
 window.api.onDiscoveredNodes((nodes) => {
-  if (currentView === '3d' && window.view3d.isActive()) window.view3d.handleDiscoveredNodes(nodes);
+  if (currentView === '3d' && window.view3d && window.view3d.isActive()) window.view3d.handleDiscoveredNodes(nodes);
 });
 
 window.api.onAsterixFlows((flows) => {
-  if (currentView === '3d' && window.view3d.isActive()) window.view3d.handleAsterixFlows(flows);
+  if (currentView === '3d' && window.view3d && window.view3d.isActive()) window.view3d.handleAsterixFlows(flows);
 });
 
 window.api.onCaptureError((msg) => {
@@ -605,7 +605,7 @@ function switchView(view) {
   } else {
     tableContainer.style.display = '';
     view3d.classList.remove('active');
-    window.view3d.dispose();
+    if (window.view3d && window.view3d.isActive()) window.view3d.dispose();
   }
 
   document.querySelectorAll('.view-toggle-btn').forEach(btn => {
@@ -625,7 +625,7 @@ function escapeHtml(str) {
 }
 
 function escapeAttr(str) {
-  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function isValidIp(ip) {
@@ -650,9 +650,9 @@ document.getElementById('btnClose').addEventListener('click', () => {
   window.api.windowClose();
 });
 
-const btnMaximize = document.getElementById('btnMaximize');
-
 function setMaximizeIcon(isMaximized) {
+  const btnMaximize = document.getElementById('btnMaximize');
+  if (!btnMaximize) return;
   if (isMaximized) {
     btnMaximize.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><rect fill="none" stroke="currentColor" stroke-width="1" width="7" height="7" x="1.5" y="3.5"/><polyline fill="none" stroke="currentColor" stroke-width="1" points="3.5,3.5 3.5,1.5 10.5,1.5 10.5,8.5 8.5,8.5"/></svg>';
     btnMaximize.title = '이전 크기로 복원';

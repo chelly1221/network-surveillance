@@ -21,6 +21,7 @@ let mainWindow;
 let pingIntervalTimers = [];
 let alarmTimer = null;
 let running = false;
+let pingGeneration = 0;
 let targetStatus = {};
 let settings = {};
 let activeChildProcesses = [];
@@ -84,6 +85,10 @@ function parseAsterixPayload(buffer, offset, maxLen) {
 // --- Settings file path (portable: next to exe) ---
 function getSettingsPath() {
   if (app.isPackaged) {
+    const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+    if (portableDir) {
+      return path.join(portableDir, 'settings.json');
+    }
     return path.join(path.dirname(process.execPath), 'settings.json');
   }
   return path.join(__dirname, 'settings.json');
@@ -125,7 +130,10 @@ function saveSettings(newSettings) {
     settings = { ...settings, ...newSettings };
   }
   try {
-    fs.writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 4), 'utf-8');
+    const settingsPath = getSettingsPath();
+    const tmpPath = settingsPath + '.tmp';
+    fs.writeFileSync(tmpPath, JSON.stringify(settings, null, 4), 'utf-8');
+    fs.renameSync(tmpPath, settingsPath);
   } catch (e) {
     console.error('Failed to save settings:', e);
   }
@@ -147,13 +155,17 @@ function getSoundFilePath() {
 // --- Ping ---
 function ping(address) {
   return new Promise((resolve) => {
+    if (!/^[a-zA-Z0-9.\-]+$/.test(address)) {
+      resolve(false);
+      return;
+    }
     const child = execFile('ping', ['-n', '1', '-w', '4000', address], { timeout: 6000 }, (error, stdout) => {
       const idx = activeChildProcesses.indexOf(child);
       if (idx !== -1) activeChildProcesses.splice(idx, 1);
       if (error) {
         resolve(false);
       } else {
-        resolve(stdout.includes('TTL'));
+        resolve(/\bTTL[=]/i.test(stdout));
       }
     });
     activeChildProcesses.push(child);
@@ -171,7 +183,10 @@ function sendUdpNotification(message) {
     });
     const buf = Buffer.from(message || settings.udp_message);
     const port = parseInt(settings.udp_port, 10);
-    if (isNaN(port) || port < 0 || port > 65535) return;
+    if (isNaN(port) || port < 0 || port > 65535) {
+      client.close();
+      return;
+    }
     client.send(buf, port, settings.udp_ip, (err) => {
       client.close();
       if (err) console.error('UDP send error:', err);
@@ -283,7 +298,7 @@ function startCapture() {
         let isIPv4 = false;
         if (ret.info.type === PROTOCOL.ETHERNET.IPV4) {
           isIPv4 = true;
-        } else if (ret.info.type === 0x8100 && buffer.length > ret.offset + 4) {
+        } else if (ret.info.type === 0x8100 && nbytes > ret.offset + 4) {
           // VLAN tagged frame - check inner EtherType
           const innerType = buffer.readUInt16BE(ret.offset + 2);
           if (innerType === 0x0800) {
@@ -310,25 +325,26 @@ function startCapture() {
           if (protocol === PROTOCOL.IP.UDP && transportOffset + 8 <= nbytes) {
             try {
               const udpInfo = decoders.UDP(buffer, transportOffset);
-              // Skip ASTERIX parsing for low port numbers (DNS, NTP, etc.)
-              if (udpInfo.info.srcport < 10000 && udpInfo.info.dstport < 10000) throw 'skip';
-              const payloadOff = udpInfo.offset;
-              const payloadLen = Math.min(udpInfo.info.length - 8, nbytes - payloadOff);
-              if (payloadLen >= 3) {
-                const cats = parseAsterixPayload(buffer, payloadOff, payloadLen);
-                if (cats.length > 0 && !srcNonDevice) {
-                  // Use real src; for multicast/broadcast dst, attribute to src only
-                  const effectiveDst = dstNonDevice ? srcaddr : dstaddr;
-                  const akey = srcaddr + '>' + effectiveDst;
-                  if (!asterixFlows[akey]) {
-                    asterixFlows[akey] = { src: srcaddr, dst: effectiveDst, cats: {}, totalBytes: 0 };
-                  }
-                  const af = asterixFlows[akey];
-                  af.totalBytes += totallen;
-                  for (const c of cats) {
-                    if (!af.cats[c.cat]) af.cats[c.cat] = { bytes: 0, count: 0 };
-                    af.cats[c.cat].bytes += c.len;
-                    af.cats[c.cat].count++;
+              // Only parse ASTERIX for high port numbers (skip DNS, NTP, etc.)
+              if (udpInfo.info.srcport >= 10000 || udpInfo.info.dstport >= 10000) {
+                const payloadOff = udpInfo.offset;
+                const payloadLen = Math.min(udpInfo.info.length - 8, nbytes - payloadOff);
+                if (payloadLen >= 3) {
+                  const cats = parseAsterixPayload(buffer, payloadOff, payloadLen);
+                  if (cats.length > 0 && !srcNonDevice) {
+                    // Use real src; for multicast/broadcast dst, attribute to src only
+                    const effectiveDst = dstNonDevice ? srcaddr : dstaddr;
+                    const akey = srcaddr + '>' + effectiveDst;
+                    if (!asterixFlows[akey]) {
+                      asterixFlows[akey] = { src: srcaddr, dst: effectiveDst, cats: {}, totalBytes: 0 };
+                    }
+                    const af = asterixFlows[akey];
+                    af.totalBytes += totallen;
+                    for (const c of cats) {
+                      if (!af.cats[c.cat]) af.cats[c.cat] = { bytes: 0, count: 0 };
+                      af.cats[c.cat].bytes += c.len;
+                      af.cats[c.cat].count++;
+                    }
                   }
                 }
               }
@@ -546,6 +562,7 @@ function stopCapture() {
 function startPinging() {
   if (running) return;
   running = true;
+  const myGeneration = ++pingGeneration;
   targetStatus = {};
 
   const targets = settings.targets || [];
@@ -557,9 +574,9 @@ function startPinging() {
     activeCount++;
 
     const doPing = async () => {
-      if (!running) return;
+      if (myGeneration !== pingGeneration) return;
       const result = await ping(target.address);
-      if (!running) return;  // Guard after await
+      if (myGeneration !== pingGeneration) return;  // Guard after await
       const status = result ? '성공' : '장애';
       const now = new Date();
       const timestamp = now.toTimeString().split(' ')[0]; // HH:MM:SS
@@ -587,7 +604,9 @@ function startPinging() {
   if (activeCount > 0) {
     // Alarm loop: check every 3 seconds
     alarmTimer = setInterval(() => {
-      const anyFailed = Object.values(targetStatus).some(s => s.status === '장애');
+      const statuses = Object.values(targetStatus);
+      if (statuses.length === 0) return; // No results yet, skip
+      const anyFailed = statuses.some(s => s.status === '장애');
       if (anyFailed) {
         // Play sound
         if (!settings.mute_state && settings.sound_enabled) {
