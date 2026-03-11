@@ -148,7 +148,8 @@ function loadSettings() {
         .map(t => ({
           name: String(t.name || '').trim(),
           address: String(t.address || '').trim(),
-          enabled: t.enabled !== false
+          enabled: t.enabled !== false,
+          type: ['pc', 'router', 'switch', 'server'].includes(t.type) ? t.type : 'pc'
         }));
       // Validate key types
       if (typeof settings.ping_interval !== 'number' || settings.ping_interval < 1 || settings.ping_interval > 3600) settings.ping_interval = defaults.ping_interval;
