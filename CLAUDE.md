@@ -7,7 +7,7 @@
 ## 기술 스택
 - **Runtime**: Electron (Node.js)
 - **UI**: HTML + CSS (순수 웹 기술, 프레임워크 없음)
-- **3D 시각화**: Three.js (renderer/lib/three.min.js)
+- **2D 시각화**: Canvas 2D (renderer/view2d.js)
 - **Language**: JavaScript (ES Modules in renderer, CommonJS in main)
 - **Build**: electron-builder (Windows portable .exe)
 - **Platform**: Windows only
@@ -21,13 +21,11 @@ pingtester/
 ├── main.js              # Electron 메인 프로세스 (ping, UDP, sound, settings, packet capture)
 ├── preload.js           # contextBridge API (main↔renderer IPC, EVENT_CHANNELS 기반)
 ├── renderer/
-│   ├── index.html       # 메인 UI (테이블 + 3D 뷰, ARIA 접근성 적용)
+│   ├── index.html       # 메인 UI (테이블 + 2D 토폴로지 뷰, ARIA 접근성 적용)
 │   ├── renderer.js      # UI 로직 및 IPC 호출
 │   ├── styles.css       # 스타일시트 (WCAG AA 대비 준수)
-│   ├── view3d.js        # Three.js 기반 3D 네트워크 시각화
-│   ├── topoEditor.js    # 캔버스 기반 토폴로지 편집기
-│   └── lib/
-│       └── three.min.js # Three.js 라이브러리
+│   ├── view2d.js        # Canvas 2D 토폴로지 시각화 + 미등록 노드
+│   └── topoEditor.js    # 캔버스 기반 토폴로지 편집기
 ├── assets/
 │   ├── icon.ico         # 앱 아이콘
 │   ├── app_icon.png     # 앱 아이콘 (PNG)
@@ -59,6 +57,14 @@ WSL2에서는 wine이 없어 직접 `npm run build`가 실패하므로 `cmd.exe`
 cmd.exe /c "cd /d C:\code\pingtester && npm run build"
 ```
 
+## 보안 원칙
+- **프로토타입 오염 방어**: `sanitizeObject()` 재귀 함수로 `__proto__`, `constructor`, `prototype` 키 제거
+- **설정 키 허용 목록**: `ALLOWED_SETTINGS_KEYS` Set으로 허용된 키만 저장/로드
+- **서버사이드 입력 검증**: 주소(253자, regex), IP(옥텟 0-255), 포트(1-65535), 메시지(1024자), 이름(100자), 토폴로지(장비 100개, 연결 500개)
+- **XSS 방어**: `escapeHtml()` (& < > " '), `escapeAttr()` 적용
+- **CSP**: Content Security Policy로 스크립트/스타일 소스 제한
+- **사운드 파일**: 확장자 검증 (.wav, .mp3, .ogg만 허용)
+
 ## 코딩 컨벤션
 - UI 텍스트는 한국어
 - 변수/함수명은 영어 camelCase
@@ -66,8 +72,10 @@ cmd.exe /c "cd /d C:\code\pingtester && npm run build"
 - 에러 처리: 사용자에게 영향 없이 콘솔 로깅, IPC 반환값으로 실패 전달
 - ping은 Windows `ping -n 1` 명령 사용
 - 주소 검증: `/^[a-zA-Z0-9]+([.\-][a-zA-Z0-9]+)*$/` (main + renderer 양쪽)
-- HTML: 모든 button에 `type="button"`, 모달에 ARIA role, SVG에 `aria-hidden`
+- HTML: 모든 button에 `type="button"`, 모달에 ARIA role/aria-labelledby, SVG에 `aria-hidden`
 - CSS: WCAG AA 대비 준수, `:focus-visible` 스타일 적용
+- Canvas: DPR(devicePixelRatio) 보정, `canvas._logicalW`/`_logicalH`로 논리 크기 관리
+- Canvas 렌더: `requestAnimationFrame` 배칭 (`scheduleRender()` 패턴)
 
 ## 주요 기능
 1. **감시 대상 관리**: 최대 20개, 활성화/비활성화 가능, 중복 IP 경고
@@ -77,6 +85,6 @@ cmd.exe /c "cd /d C:\code\pingtester && npm run build"
 5. **UDP 알림**: 장애/정상 시 설정된 주소로 UDP 메시지 전송
 6. **경보음**: 장애 감지 시 WAV 파일 재생 (음소거 가능)
 7. **설정 저장**: JSON 파일로 영속 저장 (저장 실패 시 rollback)
-8. **3D 네트워크 뷰**: Three.js 방사형 토폴로지, 실시간 트래픽 시각화
+8. **2D 토폴로지 뷰**: Canvas 2D 토폴로지 + 미등록 노드 목록, 실시간 상태 시각화
 9. **물리 토폴로지 편집**: 캔버스 기반 장비 배치 및 연결 편집
 10. **패킷 캡처**: Npcap 기반 IPv4 트래픽 모니터링, 다중 어댑터 동시 캡처, ASTERIX 프로토콜 감지

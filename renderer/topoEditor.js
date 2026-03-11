@@ -16,31 +16,39 @@
 
   const REF_W = 800, REF_H = 500;
   const DEV_R = 20;
+  const GRID_STEP = 40;
 
   const TYPES = {
-    hub_center: { name: '감시센터', fill: '#004d5a', stroke: '#00bcd4' },
-    router: { name: '라우터', fill: '#5d2700', stroke: '#e67e22' },
-    switch: { name: '스위치', fill: '#1a4d1a', stroke: '#4caf50' },
-    pc: { name: 'PC', fill: '#0d2d5e', stroke: '#3498db' },
-    server: { name: '서버', fill: '#2a0845', stroke: '#9b59b6' }
+    hub_center: { name: '감시센터', fill: '#e0f7fa', stroke: '#00bcd4' },
+    router: { name: '라우터', fill: '#fff3e0', stroke: '#e67e22' },
+    switch: { name: '스위치', fill: '#e8f5e9', stroke: '#4caf50' },
+    pc: { name: 'PC', fill: '#e3f2fd', stroke: '#a60739' },
+    server: { name: '서버', fill: '#f3e5f5', stroke: '#9b59b6' }
   };
 
   let _uidSeq = 0;
   function uid() {
-    return 'dev_' + Date.now().toString(36) + '_' + (++_uidSeq).toString(36) + Math.random().toString(36).substr(2, 4);
+    return 'dev_' + Date.now().toString(36) + '_' + (++_uidSeq).toString(36) + Math.random().toString(36).slice(2, 6);
   }
 
-  function sx(v) { return v / REF_W * canvas.width; }
-  function sy(v) { return v / REF_H * canvas.height; }
-  function ux(v) { return canvas.width ? (v / canvas.width * REF_W) : 0; }
-  function uy(v) { return canvas.height ? (v / canvas.height * REF_H) : 0; }
-  function sr() { return DEV_R * (canvas.width / REF_W); }
+  function sx(v) { return v / REF_W * (canvas._logicalW || canvas.width); }
+  function sy(v) { return v / REF_H * (canvas._logicalH || canvas.height); }
+  function ux(v) { var w = canvas._logicalW || canvas.width; return w ? (v / w * REF_W) : 0; }
+  function uy(v) { var h = canvas._logicalH || canvas.height; return h ? (v / h * REF_H) : 0; }
+  function sr() { return DEV_R * ((canvas._logicalW || canvas.width) / REF_W); }
+
+  function snapToGrid(val) {
+    return Math.round(val / GRID_STEP) * GRID_STEP;
+  }
 
   // ===== Init =====
+  let capturedPointerId = null;
+
   function init(canvasEl, onSelect) {
     if (canvas) destroy();  // Clean up previous instance to prevent listener leaks
     canvas = canvasEl;
     ctx = canvas.getContext('2d');
+    if (!ctx) { console.error('Failed to acquire 2D canvas context for topoEditor'); return; }
     onSelectCb = onSelect;
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointermove', onMove);
@@ -49,9 +57,18 @@
   }
 
   function resize() {
-    if (!canvas || !canvas.parentElement) return;
-    canvas.width = canvas.parentElement.clientWidth;
-    canvas.height = canvas.parentElement.clientHeight;
+    if (!canvas || !ctx || !canvas.parentElement) return;
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.parentElement.clientWidth;
+    var h = canvas.parentElement.clientHeight;
+    if (!w || !h) return;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas._logicalW = w;
+    canvas._logicalH = h;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     render();
   }
 
@@ -60,6 +77,19 @@
     if (topology && topology.devices && topology.devices.length > 0) {
       devices = JSON.parse(JSON.stringify(topology.devices));
       connections = JSON.parse(JSON.stringify(topology.connections || []));
+      // Prune orphaned connections
+      var deviceIds = new Set(devices.map(function(d) { return d.id; }));
+      connections = connections.filter(function(c) {
+        return c.from !== c.to && deviceIds.has(c.from) && deviceIds.has(c.to);
+      });
+      // Deduplicate connections
+      var connSet = {};
+      connections = connections.filter(function(c) {
+        var key = c.from < c.to ? c.from + '|' + c.to : c.to + '|' + c.from;
+        if (connSet[key]) return false;
+        connSet[key] = true;
+        return true;
+      });
     } else {
       autoGenerate(targets);
     }
@@ -77,21 +107,21 @@
   }
 
   function autoGenerate(targets) {
-    devices = [{ id: 'dev_hub', type: 'hub_center', name: '감시센터', ip: '', x: REF_W / 2, y: REF_H / 2 }];
+    devices = [{ id: 'dev_hub', type: 'hub_center', name: '감시센터', ip: '', x: snapToGrid(REF_W / 2), y: snapToGrid(REF_H / 2) }];
     connections = [];
-    const active = [];
+    var activeTargets = [];
     (targets || []).forEach(function (t, i) {
-      if (t.name && t.address) active.push({ name: t.name, address: t.address, realIdx: i });
+      if (t.name && t.address) activeTargets.push({ name: t.name, address: t.address, type: t.type || 'pc', realIdx: i });
     });
     var cx = REF_W / 2, cy = REF_H / 2, radius = Math.min(REF_W, REF_H) * 0.35;
-    active.forEach(function (t, i) {
-      var angle = (i / Math.max(active.length, 1)) * Math.PI * 2 - Math.PI / 2;
+    activeTargets.forEach(function (t, i) {
+      var angle = (i / Math.max(activeTargets.length, 1)) * Math.PI * 2 - Math.PI / 2;
       var id = uid();
       devices.push({
-        id: id, type: 'pc', name: t.name, ip: t.address,
+        id: id, type: t.type, name: t.name, ip: t.address,
         target_index: t.realIdx,
-        x: cx + Math.cos(angle) * radius,
-        y: cy + Math.sin(angle) * radius
+        x: snapToGrid(cx + Math.cos(angle) * radius),
+        y: snapToGrid(cy + Math.sin(angle) * radius)
       });
       connections.push({ from: 'dev_hub', to: id });
     });
@@ -99,18 +129,26 @@
 
   // ===== Rendering =====
   function render() {
-    if (!ctx || !canvas || !canvas.width) return;
-    var w = canvas.width, h = canvas.height;
+    if (!ctx || !canvas) return;
+    var w = canvas._logicalW || canvas.width, h = canvas._logicalH || canvas.height;
+    if (!w || !h) return;
 
-    ctx.fillStyle = '#0a0e1a';
+    ctx.fillStyle = '#f0f1f4';
     ctx.fillRect(0, 0, w, h);
 
     // Grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
     ctx.lineWidth = 1;
-    var step = 40 * w / REF_W;
+    var step = GRID_STEP * w / REF_W;
     for (var gx = step; gx < w; gx += step) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke(); }
     for (var gy = step; gy < h; gy += step) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke(); }
+    // Grid intersection dots
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    for (var gx2 = step; gx2 < w; gx2 += step) {
+      for (var gy2 = step; gy2 < h; gy2 += step) {
+        ctx.beginPath(); ctx.arc(gx2, gy2, 1.5, 0, Math.PI * 2); ctx.fill();
+      }
+    }
 
     // Connections
     for (var ci = 0; ci < connections.length; ci++) drawConn(connections[ci]);
@@ -122,7 +160,7 @@
         ctx.beginPath();
         ctx.moveTo(sx(from.x), sy(from.y));
         ctx.lineTo(mouseX, mouseY);
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 5]);
         ctx.stroke();
@@ -139,7 +177,7 @@
     else if (mode === 'delete') hint = '삭제할 장비 또는 연결선을 클릭하세요';
     else if (mode.startsWith('add_')) hint = '캔버스를 클릭하여 배치하세요';
     if (hint) {
-      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.font = Math.max(11, 12 * w / REF_W).toFixed(0) + 'px Pretendard, Segoe UI, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(hint, w / 2, h - 10);
@@ -153,12 +191,12 @@
     ctx.beginPath();
     ctx.moveTo(sx(from.x), sy(from.y));
     ctx.lineTo(sx(to.x), sy(to.y));
-    ctx.strokeStyle = sel ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.15)';
+    ctx.strokeStyle = sel ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.15)';
     ctx.lineWidth = sel ? 2.5 : 1.5;
     ctx.stroke();
     // Port dots at endpoints
     var r = 3;
-    ctx.fillStyle = sel ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)';
+    ctx.fillStyle = sel ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.2)';
     ctx.beginPath(); ctx.arc(sx(from.x), sy(from.y), r, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(sx(to.x), sy(to.y), r, 0, Math.PI * 2); ctx.fill();
   }
@@ -227,14 +265,14 @@
     ctx.restore();
 
     // Labels
-    var fs = Math.max(10, 11 * canvas.width / REF_W);
+    var fs = Math.max(10, 11 * (canvas._logicalW || canvas.width) / REF_W);
     ctx.textAlign = 'center';
-    ctx.fillStyle = sel ? '#ffffff' : '#c8cdd8';
+    ctx.fillStyle = sel ? '#1a1a2e' : '#3a3f4d';
     ctx.font = (sel ? 'bold ' : '') + fs.toFixed(0) + 'px Pretendard, Segoe UI, sans-serif';
     ctx.fillText(dev.name, x, y + r + fs + 2);
     if (dev.ip) {
-      ctx.fillStyle = '#7a849a';
-      ctx.font = Math.max(8, 9 * canvas.width / REF_W).toFixed(0) + 'px Consolas, monospace';
+      ctx.fillStyle = '#6b7694';
+      ctx.font = Math.max(8, 9 * (canvas._logicalW || canvas.width) / REF_W).toFixed(0) + 'px Consolas, monospace';
       ctx.fillText(dev.ip, x, y + r + fs + 14);
     }
   }
@@ -297,7 +335,9 @@
     if (mode.startsWith('add_')) {
       var type = mode.replace('add_', '');
       var cfg = TYPES[type];
-      var dev = { id: uid(), type: type, name: cfg ? cfg.name : type, ip: '', x: ux(p.x), y: uy(p.y) };
+      var dev = { id: uid(), type: type, name: cfg ? cfg.name : type, ip: '',
+        x: Math.max(DEV_R, Math.min(REF_W - DEV_R, snapToGrid(ux(p.x)))),
+        y: Math.max(DEV_R, Math.min(REF_H - DEV_R, snapToGrid(uy(p.y)))) };
       devices.push(dev);
       selectedId = dev.id;
       mode = 'select';
@@ -335,7 +375,8 @@
     // Delete mode
     if (mode === 'delete') {
       var hitDev = hitDevice(p.x, p.y);
-      if (hitDev && hitDev.type !== 'hub_center') {
+      if (hitDev) {
+        if (hitDev.type === 'hub_center') return; // Hub cannot be deleted
         devices = devices.filter(function (d) { return d.id !== hitDev.id; });
         connections = connections.filter(function (c) { return c.from !== hitDev.id && c.to !== hitDev.id; });
         if (selectedId === hitDev.id) { selectedId = null; if (onSelectCb) onSelectCb(null); }
@@ -359,6 +400,7 @@
       dragId = sel.id;
       dragOX = p.x - sx(sel.x);
       dragOY = p.y - sy(sel.y);
+      capturedPointerId = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       if (onSelectCb) onSelectCb(sel);
     } else {
@@ -375,8 +417,10 @@
     if (dragging && dragId) {
       var dev = findDev(dragId);
       if (dev) {
-        dev.x = Math.max(DEV_R, Math.min(REF_W - DEV_R, ux(p.x - dragOX)));
-        dev.y = Math.max(DEV_R, Math.min(REF_H - DEV_R, uy(p.y - dragOY)));
+        var rawX = ux(p.x - dragOX);
+        var rawY = uy(p.y - dragOY);
+        dev.x = Math.max(DEV_R, Math.min(REF_W - DEV_R, snapToGrid(rawX)));
+        dev.y = Math.max(DEV_R, Math.min(REF_H - DEV_R, snapToGrid(rawY)));
       }
       render();
       return;
@@ -391,8 +435,9 @@
         var dev = findDev(dragId);
         if (dev) onSelectCb(dev);
       }
-      if (e && e.pointerId !== undefined) {
-        try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      if (capturedPointerId !== null) {
+        try { canvas.releasePointerCapture(capturedPointerId); } catch (_) {}
+        capturedPointerId = null;
       }
     }
     dragging = false;
@@ -420,11 +465,16 @@
     if (props.name !== undefined) dev.name = props.name;
     if (props.ip !== undefined) dev.ip = props.ip;
     if (props.target_index !== undefined) dev.target_index = props.target_index;
+    if (props.type !== undefined && dev.type !== 'hub_center') dev.type = props.type;
     render();
   }
 
   function destroy() {
     if (canvas) {
+      if (capturedPointerId !== null) {
+        try { canvas.releasePointerCapture(capturedPointerId); } catch (_) {}
+        capturedPointerId = null;
+      }
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);

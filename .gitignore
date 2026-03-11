@@ -7,3 +7,5 @@ __pycache__/
 Thumbs.db
 *.exe
 settings.json
+settings.json.tmp
+settings.json.backup_*

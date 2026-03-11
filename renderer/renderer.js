@@ -34,10 +34,10 @@ async function init() {
   updateTargetCount();
   updateStatusBar();
   updateNpcapIndicator();
-  // Fetch local IP for 3D hub mapping
+  // Fetch local IP for topology view
   try {
     const lip = await window.api.getLocalIp();
-    if (lip && window.view3d) window.view3d.setLocalIp(lip);
+    if (lip && window.view2d) window.view2d.setLocalIp(lip);
   } catch (e) {}
 }
 
@@ -47,7 +47,7 @@ function buildIpMap() {
   targets.forEach((t, i) => {
     if (t.address) ipToIndex[t.address] = i;
   });
-  if (window.view3d) window.view3d.setIpMap(ipToIndex);
+  if (window.view2d) window.view2d.setIpMap(ipToIndex);
 }
 
 function updateNpcapIndicator() {
@@ -183,20 +183,19 @@ btnStart.addEventListener('click', async () => {
   renderTargetTable();
   updateTargetCount();
   updateStatusBar();
-  if (currentView === '3d' && window.view3d) {
-    window.view3d.init();
-    if (settings.topology && window.view3d.setTopology) {
-      window.view3d.setTopology(settings.topology);
+  if (currentView === '2d' && window.view2d) {
+    window.view2d.init();
+    if (settings.topology && window.view2d.setTopology) {
+      window.view2d.setTopology(settings.topology);
     }
-    window.view3d.setTargets(settings.targets || [], ipToIndex);
-    window.view3d.startAmbientFlow();
+    window.view2d.setTargets(settings.targets || [], ipToIndex);
   }
   try {
     await window.api.startPinging();
     if (!isRunning) return;  // User clicked stop during await
     // Update local IP after capture starts (localIp is set during startCapture)
     const lip = await window.api.getLocalIp();
-    if (lip && window.view3d) window.view3d.setLocalIp(lip);
+    if (lip && window.view2d) window.view2d.setLocalIp(lip);
   } catch (e) {
     console.error('Failed to start pinging:', e);
     isRunning = false;
@@ -212,7 +211,7 @@ btnStop.addEventListener('click', async () => {
   btnStart.disabled = false;
   btnStop.disabled = true;
   updateStatusBar();
-  if (window.view3d && window.view3d.isActive()) window.view3d.stopAmbientFlow();
+  // 2D view doesn't need explicit stop
   try {
     await window.api.stopPinging();
   } catch (e) {
@@ -249,9 +248,8 @@ chkMute.addEventListener('change', async () => {
 
 window.api.onPingResult((data) => {
   updateTargetRow(data);
-  if (currentView === '3d' && window.view3d && window.view3d.isActive()) {
-    window.view3d.updateNodeStatus(data.index, data.status, data.timestamp);
-    window.view3d.emitPingParticles(data);
+  if (currentView === '2d' && window.view2d && window.view2d.isActive()) {
+    window.view2d.updateNodeStatus(data.index, data.status, data.timestamp);
   }
 });
 
@@ -259,21 +257,15 @@ window.api.onFailureLog((data) => {
   addLogEntry(data);
 });
 
-window.api.onTrafficStats((stats) => {
-  if (currentView === '3d' && window.view3d && window.view3d.isActive()) window.view3d.handleTrafficStats(stats);
-});
+window.api.onTrafficStats(() => {});
 
-window.api.onInterNodeStats((flows) => {
-  if (currentView === '3d' && window.view3d && window.view3d.isActive()) window.view3d.handleInterNodeStats(flows);
-});
+window.api.onInterNodeStats(() => {});
 
 window.api.onDiscoveredNodes((nodes) => {
-  if (currentView === '3d' && window.view3d && window.view3d.isActive()) window.view3d.handleDiscoveredNodes(nodes);
+  if (currentView === '2d' && window.view2d && window.view2d.isActive()) window.view2d.handleDiscoveredNodes(nodes);
 });
 
-window.api.onAsterixFlows((flows) => {
-  if (currentView === '3d' && window.view3d && window.view3d.isActive()) window.view3d.handleAsterixFlows(flows);
-});
+window.api.onAsterixFlows(() => {});
 
 window.api.onCaptureError((msg) => {
   console.error('패킷 캡처 오류:', msg);
@@ -334,13 +326,23 @@ document.getElementById('menuTargets').addEventListener('click', () => {
   if (!showModal('targetModal')) return;
   const body = document.getElementById('targetSettingsBody');
   body.innerHTML = '';
+  const typeOptions = [
+    { value: 'pc', label: 'PC' },
+    { value: 'router', label: '라우터' },
+    { value: 'switch', label: '스위치' },
+    { value: 'server', label: '서버' }
+  ];
   for (let i = 0; i < 20; i++) {
-    const target = (settings.targets && settings.targets[i]) || { name: '', address: '', enabled: true };
+    const target = (settings.targets && settings.targets[i]) || { name: '', address: '', enabled: true, type: 'pc' };
     const tr = document.createElement('tr');
+    const typeSelHtml = typeOptions.map(o =>
+      `<option value="${o.value}"${(target.type || 'pc') === o.value ? ' selected' : ''}>${o.label}</option>`
+    ).join('');
     tr.innerHTML = `
       <td><input type="checkbox" class="ts-enabled" ${target.enabled !== false ? 'checked' : ''}></td>
       <td><input type="text" class="ts-name" value="${escapeAttr(target.name || '')}"></td>
       <td><input type="text" class="ts-address" value="${escapeAttr(target.address || '')}"></td>
+      <td><select class="ts-type">${typeSelHtml}</select></td>
     `;
     body.appendChild(tr);
   }
@@ -353,8 +355,9 @@ document.getElementById('btnSaveTargets').addEventListener('click', async () => 
     const name = row.querySelector('.ts-name').value.trim();
     const address = row.querySelector('.ts-address').value.trim();
     const enabled = row.querySelector('.ts-enabled').checked;
+    const type = row.querySelector('.ts-type').value || 'pc';
     if (name && address) {
-      targets.push({ name, address, enabled });
+      targets.push({ name, address, enabled, type });
     }
   });
   // Validate addresses
@@ -381,8 +384,8 @@ document.getElementById('btnSaveTargets').addEventListener('click', async () => 
     buildIpMap();
     renderTargetTable();
     updateTargetCount();
-    if (currentView === '3d' && window.view3d && window.view3d.isActive()) {
-      window.view3d.setTargets(settings.targets || [], ipToIndex);
+    if (currentView === '2d' && window.view2d && window.view2d.isActive()) {
+      window.view2d.setTargets(settings.targets || [], ipToIndex);
     }
   }
   hideModal('targetModal');
@@ -638,13 +641,18 @@ document.getElementById('menuTopo').addEventListener('click', () => {
 
   // Init canvas editor (re-init each time since destroy() tears it down)
   const canvasEl = document.getElementById('topoCanvas');
-  if (!topoEditorInited) {
-    window.topoEditor.init(canvasEl, onTopoSelect);
-    topoEditorInited = true;
+  try {
+    if (!topoEditorInited) {
+      window.topoEditor.init(canvasEl, onTopoSelect);
+      topoEditorInited = true;
+    }
+    window.topoEditor.load(settings.topology, settings.targets || []);
+    window.topoEditor.setMode('select'); // Reset mode + toolbar
+  } catch (e) {
+    console.error('Failed to initialize topology editor:', e);
+    hideModal('topoModal');
+    return;
   }
-
-  window.topoEditor.load(settings.topology, settings.targets || []);
-  window.topoEditor.setMode('select'); // Reset mode + toolbar
 
   // Defer resize so the modal is rendered
   requestAnimationFrame(() => {
@@ -682,28 +690,34 @@ document.querySelectorAll('.topo-tool-btn').forEach(btn => {
 function onTopoSelect(dev) {
   const nameInput = document.getElementById('topoPropName');
   const ipInput = document.getElementById('topoPropIp');
+  const typeSel = document.getElementById('topoPropType');
   const targetSel = document.getElementById('topoPropTarget');
   const propsEl = document.getElementById('topoProps');
 
   if (!dev) {
     nameInput.value = '';
     ipInput.value = '';
+    typeSel.value = 'pc';
     targetSel.value = '';
     nameInput.disabled = true;
     ipInput.disabled = true;
+    typeSel.disabled = true;
     targetSel.disabled = true;
     propsEl.style.opacity = '0.4';
     propsEl.dataset.devId = '';
     return;
   }
 
+  const isHub = dev.type === 'hub_center';
   nameInput.disabled = false;
   ipInput.disabled = false;
+  typeSel.disabled = isHub;
   targetSel.disabled = false;
   propsEl.style.opacity = '1';
 
   nameInput.value = dev.name || '';
   ipInput.value = dev.ip || '';
+  typeSel.value = isHub ? 'pc' : (dev.type || 'pc');
   targetSel.value = dev.target_index !== undefined && dev.target_index !== null ? dev.target_index : '';
 
   // Store selected device id for updates
@@ -721,22 +735,30 @@ document.getElementById('topoPropIp').addEventListener('input', (e) => {
   if (id && topoEditorInited) window.topoEditor.updateDevice(id, { ip: e.target.value });
 });
 
+document.getElementById('topoPropType').addEventListener('change', (e) => {
+  const id = document.getElementById('topoProps').dataset.devId;
+  if (id && topoEditorInited) window.topoEditor.updateDevice(id, { type: e.target.value });
+});
+
 document.getElementById('topoPropTarget').addEventListener('change', (e) => {
   const id = document.getElementById('topoProps').dataset.devId;
   if (!id || !topoEditorInited) return;
   const val = e.target.value;
   const idx = val !== '' ? parseInt(val, 10) : undefined;
   const targets = settings.targets || [];
-  if (idx !== undefined && (idx < 0 || idx >= targets.length)) return;
+  if (idx !== undefined && (isNaN(idx) || idx < 0 || idx >= targets.length)) return;
   const t = idx !== undefined ? targets[idx] : null;
-  window.topoEditor.updateDevice(id, {
+  const updateProps = {
     target_index: idx,
     ip: t ? t.address : document.getElementById('topoPropIp').value,
     name: t ? t.name : document.getElementById('topoPropName').value
-  });
+  };
+  if (t && t.type) updateProps.type = t.type;
+  window.topoEditor.updateDevice(id, updateProps);
   if (t) {
     document.getElementById('topoPropIp').value = t.address;
     document.getElementById('topoPropName').value = t.name;
+    if (t.type) document.getElementById('topoPropType').value = t.type;
   }
 });
 
@@ -750,6 +772,7 @@ function closeTopoEditor() {
 }
 
 document.getElementById('btnSaveTopo').addEventListener('click', async () => {
+  if (!topoEditorInited) { closeTopoEditor(); return; }
   const topo = window.topoEditor.save();
   try {
     const saved = await window.api.saveSettings({ topology: topo });
@@ -760,36 +783,35 @@ document.getElementById('btnSaveTopo').addEventListener('click', async () => {
     return;
   }
   closeTopoEditor();
-  // Apply to 3D view (setTopology auto-rebuilds if targets exist)
-  if (currentView === '3d' && window.view3d && window.view3d.isActive()) {
-    window.view3d.setTopology(topo);
-    window.view3d.setTargets(settings.targets || [], ipToIndex);
+  // Apply to 2D view (setTopology auto-rebuilds if targets exist)
+  if (currentView === '2d' && window.view2d && window.view2d.isActive()) {
+    window.view2d.setTopology(topo);
+    window.view2d.setTargets(settings.targets || [], ipToIndex);
   }
 });
 
 document.getElementById('btnCancelTopo').addEventListener('click', () => closeTopoEditor());
 
-// --- 3D Network View ---
+// --- 2D Topology View ---
 function switchView(view) {
   currentView = view;
   const tableContainer = document.querySelector('.panel-left .table-container');
-  const view3d = document.getElementById('view3d');
+  const view2dEl = document.getElementById('view2d');
 
-  if (view === '3d') {
+  if (view === '2d') {
     tableContainer.style.display = 'none';
-    view3d.classList.add('active');
-    if (window.view3d) {
-      window.view3d.init();
-      if (settings.topology && window.view3d.setTopology) {
-        window.view3d.setTopology(settings.topology);
+    view2dEl.classList.add('active');
+    if (window.view2d) {
+      window.view2d.init();
+      if (settings.topology && window.view2d.setTopology) {
+        window.view2d.setTopology(settings.topology);
       }
-      window.view3d.setTargets(settings.targets || [], ipToIndex);
-      if (isRunning) window.view3d.startAmbientFlow();
+      window.view2d.setTargets(settings.targets || [], ipToIndex);
     }
   } else {
     tableContainer.style.display = '';
-    view3d.classList.remove('active');
-    if (window.view3d && window.view3d.isActive()) window.view3d.dispose();
+    view2dEl.classList.remove('active');
+    if (window.view2d && window.view2d.isActive()) window.view2d.dispose();
   }
 
   document.querySelectorAll('.view-toggle-btn').forEach(btn => {
@@ -801,10 +823,10 @@ document.querySelectorAll('.view-toggle-btn').forEach(btn => {
   btn.addEventListener('click', () => switchView(btn.dataset.view));
 });
 
-// (Old SVG-based 3D code removed — now using Three.js view3d.js)
 
 // --- Utility ---
 function pathToFileUrl(filePath) {
+  if (!filePath) return '';
   const normalized = filePath.replace(/\\/g, '/');
   // Handle UNC paths (\\server\share -> //server/share)
   if (normalized.startsWith('//')) {
@@ -852,10 +874,10 @@ function setMaximizeIcon(isMaximized) {
   const btnMaximize = document.getElementById('btnMaximize');
   if (!btnMaximize) return;
   if (isMaximized) {
-    btnMaximize.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><rect fill="none" stroke="currentColor" stroke-width="1" width="7" height="7" x="1.5" y="3.5"/><polyline fill="none" stroke="currentColor" stroke-width="1" points="3.5,3.5 3.5,1.5 10.5,1.5 10.5,8.5 8.5,8.5"/></svg>';
+    btnMaximize.innerHTML = '<svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><rect fill="none" stroke="currentColor" stroke-width="1" width="7" height="7" x="1.5" y="3.5"/><polyline fill="none" stroke="currentColor" stroke-width="1" points="3.5,3.5 3.5,1.5 10.5,1.5 10.5,8.5 8.5,8.5"/></svg>';
     btnMaximize.title = '이전 크기로 복원';
   } else {
-    btnMaximize.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><rect fill="none" stroke="currentColor" stroke-width="1" width="9" height="9" x="1.5" y="1.5"/></svg>';
+    btnMaximize.innerHTML = '<svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12"><rect fill="none" stroke="currentColor" stroke-width="1" width="9" height="9" x="1.5" y="1.5"/></svg>';
     btnMaximize.title = '최대화';
   }
 }

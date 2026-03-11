@@ -126,8 +126,12 @@ function loadSettings() {
       // Strip UTF-8 BOM (common when edited with Windows Notepad)
       if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
       try {
-        const data = JSON.parse(raw);
-        settings = { ...defaults, ...data };
+        let data = sanitizeObject(JSON.parse(raw));
+        const filtered = {};
+        for (const key of Object.keys(data)) {
+          if (ALLOWED_SETTINGS_KEYS.has(key)) filtered[key] = data[key];
+        }
+        settings = { ...defaults, ...filtered };
       } catch (parseErr) {
         console.error('Settings file is malformed, backing up:', parseErr);
         try {
@@ -152,8 +156,15 @@ function loadSettings() {
       if (typeof settings.mute_state !== 'boolean') settings.mute_state = defaults.mute_state;
       if (typeof settings.udp_enabled !== 'boolean') settings.udp_enabled = defaults.udp_enabled;
       if (typeof settings.sound_enabled !== 'boolean') settings.sound_enabled = defaults.sound_enabled;
-      if (settings.udp_ip && typeof settings.udp_ip === 'string' && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(settings.udp_ip)) settings.udp_ip = defaults.udp_ip;
-      if (settings.capture_mode && settings.capture_mode !== 'all') settings.capture_mode = defaults.capture_mode;
+      if (settings.udp_ip && typeof settings.udp_ip === 'string') {
+        const udpParts = settings.udp_ip.split('.');
+        const validUdpIp = udpParts.length === 4 && udpParts.every(p => {
+          const n = parseInt(p, 10);
+          return !isNaN(n) && n >= 0 && n <= 255 && String(n) === p;
+        });
+        if (!validUdpIp) settings.udp_ip = defaults.udp_ip;
+      }
+      if (!['all'].includes(settings.capture_mode)) settings.capture_mode = defaults.capture_mode;
       if (!Array.isArray(settings.capture_devices)) settings.capture_devices = defaults.capture_devices;
     } else {
       settings = { ...defaults };
@@ -165,8 +176,32 @@ function loadSettings() {
   return settings;
 }
 
+const ALLOWED_SETTINGS_KEYS = new Set([
+  'targets', 'ping_interval', 'udp_enabled', 'udp_ip', 'udp_port',
+  'udp_message', 'udp_no_failure_message', 'sound_enabled', 'sound_file',
+  'mute_state', 'capture_device', 'capture_devices', 'capture_mode', 'topology'
+]);
+
+function sanitizeObject(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeObject);
+  const clean = {};
+  for (const key of Object.keys(obj)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    clean[key] = typeof obj[key] === 'object' ? sanitizeObject(obj[key]) : obj[key];
+  }
+  return clean;
+}
+
 function saveSettings(newSettings) {
-  const merged = newSettings ? { ...settings, ...newSettings } : { ...settings };
+  let filtered;
+  if (newSettings) {
+    filtered = {};
+    for (const key of Object.keys(newSettings)) {
+      if (ALLOWED_SETTINGS_KEYS.has(key)) filtered[key] = newSettings[key];
+    }
+  }
+  const merged = filtered ? { ...settings, ...filtered } : { ...settings };
   try {
     const settingsPath = getSettingsPath();
     const tmpPath = settingsPath + '.tmp';
@@ -184,8 +219,11 @@ function saveSettings(newSettings) {
 
 // --- Sound ---
 function getSoundFilePath() {
-  if (settings.sound_file && fs.existsSync(settings.sound_file)) {
-    return settings.sound_file;
+  if (settings.sound_file) {
+    const ext = path.extname(settings.sound_file).toLowerCase();
+    if ((ext === '.wav' || ext === '.mp3' || ext === '.ogg') && fs.existsSync(settings.sound_file)) {
+      return settings.sound_file;
+    }
   }
   // Default sound in assets
   const assetSound = app.isPackaged
@@ -198,7 +236,7 @@ function getSoundFilePath() {
 // --- Ping ---
 function ping(address) {
   return new Promise((resolve) => {
-    if (!/^[a-zA-Z0-9]+([.\-][a-zA-Z0-9]+)*$/.test(address)) {
+    if (!/^[a-zA-Z0-9]+([.\-][a-zA-Z0-9]+)*$/.test(address) || address.length > 253) {
       resolve(false);
       return;
     }
@@ -746,10 +784,11 @@ function stopPinging() {
     clearInterval(alarmTimer);
     alarmTimer = null;
   }
-  activeChildProcesses.forEach(child => {
+  const childrenToKill = activeChildProcesses;
+  activeChildProcesses = [];
+  childrenToKill.forEach(child => {
     try { child.kill(); } catch (e) {}
   });
-  activeChildProcesses = [];
   targetStatus = {};
 }
 
@@ -831,14 +870,14 @@ ipcMain.handle('get-settings', () => {
   return settings;
 });
 
+const ADDRESS_RE = /^[a-zA-Z0-9]+([.\-][a-zA-Z0-9]+)*$/;
+
 ipcMain.handle('save-settings', (event, newSettings) => {
   if (!newSettings || typeof newSettings !== 'object' || Array.isArray(newSettings)) {
     return settings;
   }
-  // Defense against prototype pollution
-  delete newSettings.__proto__;
-  delete newSettings.constructor;
-  delete newSettings.prototype;
+  // Defense against prototype pollution (recursive)
+  newSettings = sanitizeObject(newSettings);
   // Enforce max 20 targets
   if (Array.isArray(newSettings.targets)) {
     newSettings.targets = newSettings.targets.slice(0, 20);
@@ -859,7 +898,64 @@ ipcMain.handle('save-settings', (event, newSettings) => {
         name: typeof t.name === 'string' ? t.name.trim() : '',
         address: typeof t.address === 'string' ? t.address.trim() : ''
       };
+    }).filter(t => {
+      if (!t || typeof t !== 'object') return false;
+      if (t.address && (!ADDRESS_RE.test(t.address) || t.address.length > 253)) return false;
+      return true;
     });
+  }
+  // Validate topology size
+  if ('topology' in newSettings && newSettings.topology) {
+    const topo = newSettings.topology;
+    if (typeof topo !== 'object' || Array.isArray(topo)) {
+      delete newSettings.topology;
+    } else {
+      if (Array.isArray(topo.devices) && topo.devices.length > 100) {
+        topo.devices = topo.devices.slice(0, 100);
+      }
+      if (Array.isArray(topo.connections) && topo.connections.length > 500) {
+        topo.connections = topo.connections.slice(0, 500);
+      }
+    }
+  }
+  // Validate UDP IP
+  if ('udp_ip' in newSettings) {
+    const ip = newSettings.udp_ip;
+    if (typeof ip !== 'string' || ip === '') {
+      delete newSettings.udp_ip;
+    } else {
+      const parts = ip.split('.');
+      const valid = parts.length === 4 && parts.every(p => {
+        const n = parseInt(p, 10);
+        return !isNaN(n) && n >= 0 && n <= 255 && String(n) === p;
+      });
+      if (!valid) delete newSettings.udp_ip;
+    }
+  }
+  // Validate UDP port
+  if ('udp_port' in newSettings) {
+    const port = parseInt(newSettings.udp_port, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      delete newSettings.udp_port;
+    } else {
+      newSettings.udp_port = String(port);
+    }
+  }
+  // Validate target name lengths
+  if (Array.isArray(newSettings.targets)) {
+    newSettings.targets = newSettings.targets.map(t => {
+      if (t && typeof t === 'object' && typeof t.name === 'string' && t.name.length > 100) {
+        return { ...t, name: t.name.slice(0, 100) };
+      }
+      return t;
+    });
+  }
+  // Validate UDP message lengths
+  if (typeof newSettings.udp_message === 'string' && newSettings.udp_message.length > 1024) {
+    newSettings.udp_message = newSettings.udp_message.slice(0, 1024);
+  }
+  if (typeof newSettings.udp_no_failure_message === 'string' && newSettings.udp_no_failure_message.length > 1024) {
+    newSettings.udp_no_failure_message = newSettings.udp_no_failure_message.slice(0, 1024);
   }
   const success = saveSettings(newSettings);
   if (!success) {
@@ -903,18 +999,8 @@ ipcMain.handle('test-sound', () => {
 
 ipcMain.handle('update-mute', (event, mute) => {
   if (typeof mute !== 'boolean') return false;
-  const oldMute = settings.mute_state;
-  settings.mute_state = mute;
-  const success = saveSettings();
-  if (!success) {
-    settings.mute_state = oldMute;  // Rollback on save failure
-    return false;
-  }
-  return true;
-});
-
-ipcMain.handle('get-sound-path', () => {
-  return getSoundFilePath();
+  const success = saveSettings({ mute_state: mute });
+  return success;
 });
 
 ipcMain.handle('window-minimize', () => {
@@ -962,18 +1048,14 @@ ipcMain.handle('get-network-interfaces', () => {
 
 ipcMain.handle('save-capture-settings', (event, captureSettings) => {
   if (!captureSettings || typeof captureSettings !== 'object') return settings;
-  const oldDevices = settings.capture_devices;
-  const oldDevice = settings.capture_device;
+  const updates = {};
   if (Array.isArray(captureSettings.capture_devices)) {
-    settings.capture_devices = captureSettings.capture_devices
+    updates.capture_devices = captureSettings.capture_devices
       .filter(cd => cd && typeof cd === 'object' && typeof cd.name === 'string')
       .map(cd => ({ name: cd.name, enabled: cd.enabled !== false }));
-    settings.capture_device = '';  // Clear legacy field
+    updates.capture_device = '';  // Clear legacy field
   }
-  const success = saveSettings();
-  if (!success) {
-    settings.capture_devices = oldDevices;
-    settings.capture_device = oldDevice;
-  }
+  const ok = saveSettings(updates);
+  if (!ok) console.error('save-capture-settings: failed to persist');
   return settings;
 });

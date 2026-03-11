@@ -21,8 +21,6 @@ contextBridge.exposeInMainWorld('api', {
   browseSoundFile: () => ipcRenderer.invoke('browse-sound-file'),
   testSound: () => ipcRenderer.invoke('test-sound'),
   updateMute: (mute) => ipcRenderer.invoke('update-mute', mute),
-  getSoundPath: () => ipcRenderer.invoke('get-sound-path'),
-
   // Window controls
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
