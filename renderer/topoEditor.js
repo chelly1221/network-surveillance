@@ -133,7 +133,7 @@
     var w = canvas._logicalW || canvas.width, h = canvas._logicalH || canvas.height;
     if (!w || !h) return;
 
-    ctx.fillStyle = '#f0f1f4';
+    ctx.fillStyle = '#f8f9fb';
     ctx.fillRect(0, 0, w, h);
 
     // Grid

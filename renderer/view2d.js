@@ -148,19 +148,8 @@
     const w = canvas._logicalW, h = canvas._logicalH;
 
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#f0f1f4';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
-
-    // Grid
-    ctx.strokeStyle = 'rgba(0,0,0,0.05)';
-    ctx.lineWidth = 1;
-    const step = 40 * w / REF_W;
-    for (let gx = step; gx < w; gx += step) {
-      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
-    }
-    for (let gy = step; gy < h; gy += step) {
-      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
-    }
 
     // Connections
     for (let ci = 0; ci < connections.length; ci++) drawConn(connections[ci]);
