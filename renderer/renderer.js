@@ -259,7 +259,9 @@ window.api.onFailureLog((data) => {
 
 window.api.onTrafficStats(() => {});
 
-window.api.onInterNodeStats(() => {});
+window.api.onInterNodeStats((data) => {
+  if (currentView === '2d' && window.view2d && window.view2d.isActive()) window.view2d.handleInterNodeStats(data);
+});
 
 window.api.onDiscoveredNodes((nodes) => {
   if (currentView === '2d' && window.view2d && window.view2d.isActive()) window.view2d.handleDiscoveredNodes(nodes);
@@ -380,13 +382,11 @@ document.getElementById('btnSaveTargets').addEventListener('click', async () => 
     alert('설정 저장 실패');
     return;
   }
-  if (!isRunning) {
-    buildIpMap();
-    renderTargetTable();
-    updateTargetCount();
-    if (currentView === '2d' && window.view2d && window.view2d.isActive()) {
-      window.view2d.setTargets(settings.targets || [], ipToIndex);
-    }
+  buildIpMap();
+  renderTargetTable();
+  updateTargetCount();
+  if (currentView === '2d' && window.view2d && window.view2d.isActive()) {
+    window.view2d.setTargets(settings.targets || [], ipToIndex);
   }
   hideModal('targetModal');
   if (isRunning) alert('감시대상 변경은 정지 후 재시작 시 반영됩니다.');

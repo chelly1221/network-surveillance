@@ -11,15 +11,18 @@
   let dragging = false;
   let dragId = null;
   let dragOX = 0, dragOY = 0;
+  let resizing = false;
+  let resizeId = null;
   let mouseX = 0, mouseY = 0;
   let onSelectCb = null;
 
   const REF_W = 800, REF_H = 500;
-  const DEV_R = 20;
-  const GRID_STEP = 40;
+  const DEV_R = 14;
+  const GRID_STEP = 20;
+  const SIZE_MIN = 0.5, SIZE_MAX = 3.0;
 
   const TYPES = {
-    hub_center: { name: '감시센터', fill: '#e0f7fa', stroke: '#00bcd4' },
+    hub_center: { name: '네트워크 감시PC', fill: '#e0f7fa', stroke: '#00bcd4' },
     router: { name: '라우터', fill: '#fff3e0', stroke: '#e67e22' },
     switch: { name: '스위치', fill: '#e8f5e9', stroke: '#4caf50' },
     pc: { name: 'PC', fill: '#e3f2fd', stroke: '#a60739' },
@@ -35,7 +38,10 @@
   function sy(v) { return v / REF_H * (canvas._logicalH || canvas.height); }
   function ux(v) { var w = canvas._logicalW || canvas.width; return w ? (v / w * REF_W) : 0; }
   function uy(v) { var h = canvas._logicalH || canvas.height; return h ? (v / h * REF_H) : 0; }
-  function sr() { return DEV_R * ((canvas._logicalW || canvas.width) / REF_W); }
+  function sr(dev) {
+    var s = dev ? (dev.size || 1.0) : 1.0;
+    return DEV_R * s * ((canvas._logicalW || canvas.width) / REF_W);
+  }
 
   function snapToGrid(val) {
     return Math.round(val / GRID_STEP) * GRID_STEP;
@@ -95,6 +101,8 @@
     }
     selectedId = null;
     connectFromId = null;
+    resizing = false;
+    resizeId = null;
     mode = 'select';
   }
 
@@ -107,7 +115,7 @@
   }
 
   function autoGenerate(targets) {
-    devices = [{ id: 'dev_hub', type: 'hub_center', name: '감시센터', ip: '', x: snapToGrid(REF_W / 2), y: snapToGrid(REF_H / 2) }];
+    devices = [{ id: 'dev_hub', type: 'hub_center', name: '네트워크 감시PC', ip: '', size: 1.0, x: snapToGrid(REF_W / 2), y: snapToGrid(REF_H / 2) }];
     connections = [];
     var activeTargets = [];
     (targets || []).forEach(function (t, i) {
@@ -119,7 +127,7 @@
       var id = uid();
       devices.push({
         id: id, type: t.type, name: t.name, ip: t.address,
-        target_index: t.realIdx,
+        target_index: t.realIdx, size: 1.0,
         x: snapToGrid(cx + Math.cos(angle) * radius),
         y: snapToGrid(cy + Math.sin(angle) * radius)
       });
@@ -171,6 +179,12 @@
     // Devices
     for (var di = 0; di < devices.length; di++) drawDev(devices[di]);
 
+    // Resize handle for selected device
+    if (selectedId && mode === 'select') {
+      var selDev = findDev(selectedId);
+      if (selDev) drawResizeHandle(selDev);
+    }
+
     // Mode hint
     var hint = '';
     if (mode === 'connect') hint = connectFromId ? '두 번째 장비를 클릭하세요' : '첫 번째 장비를 클릭하세요';
@@ -195,15 +209,15 @@
     ctx.lineWidth = sel ? 2.5 : 1.5;
     ctx.stroke();
     // Port dots at endpoints
-    var r = 3;
+    var dotR = 3;
     ctx.fillStyle = sel ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.2)';
-    ctx.beginPath(); ctx.arc(sx(from.x), sy(from.y), r, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(sx(to.x), sy(to.y), r, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx(from.x), sy(from.y), dotR, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx(to.x), sy(to.y), dotR, 0, Math.PI * 2); ctx.fill();
   }
 
   function drawDev(dev) {
     var cfg = TYPES[dev.type] || TYPES.pc;
-    var x = sx(dev.x), y = sy(dev.y), r = sr();
+    var x = sx(dev.x), y = sy(dev.y), r = sr(dev);
     var sel = dev.id === selectedId;
 
     ctx.save();
@@ -265,16 +279,50 @@
     ctx.restore();
 
     // Labels
-    var fs = Math.max(10, 11 * (canvas._logicalW || canvas.width) / REF_W);
+    var fs = Math.max(9, 10 * (dev.size || 1.0) * (canvas._logicalW || canvas.width) / REF_W);
     ctx.textAlign = 'center';
     ctx.fillStyle = sel ? '#1a1a2e' : '#3a3f4d';
     ctx.font = (sel ? 'bold ' : '') + fs.toFixed(0) + 'px Pretendard, Segoe UI, sans-serif';
     ctx.fillText(dev.name, x, y + r + fs + 2);
     if (dev.ip) {
       ctx.fillStyle = '#6b7694';
-      ctx.font = Math.max(8, 9 * (canvas._logicalW || canvas.width) / REF_W).toFixed(0) + 'px Consolas, monospace';
-      ctx.fillText(dev.ip, x, y + r + fs + 14);
+      ctx.font = Math.max(7, 8 * (dev.size || 1.0) * (canvas._logicalW || canvas.width) / REF_W).toFixed(0) + 'px Consolas, monospace';
+      ctx.fillText(dev.ip, x, y + r + fs + 12);
     }
+  }
+
+  // Resize handle: small diamond at bottom-right of selected device
+  function drawResizeHandle(dev) {
+    var pos = getResizeHandlePos(dev);
+    var hs = 5;
+    ctx.save();
+    ctx.fillStyle = '#a60739';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y - hs);
+    ctx.lineTo(pos.x + hs, pos.y);
+    ctx.lineTo(pos.x, pos.y + hs);
+    ctx.lineTo(pos.x - hs, pos.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function getResizeHandlePos(dev) {
+    var x = sx(dev.x), y = sy(dev.y), r = sr(dev);
+    return { x: x + r * 1.2, y: y + r * 1.2 };
+  }
+
+  function hitResizeHandle(mx, my) {
+    if (!selectedId || mode !== 'select') return null;
+    var dev = findDev(selectedId);
+    if (!dev) return null;
+    var pos = getResizeHandlePos(dev);
+    var dx = mx - pos.x, dy = my - pos.y;
+    if (dx * dx + dy * dy < 10 * 10) return dev;
+    return null;
   }
 
   function rRect(x, y, w, h, r) {
@@ -294,9 +342,9 @@
   }
 
   function hitDevice(mx, my) {
-    var r = sr() * 1.3;
     for (var i = devices.length - 1; i >= 0; i--) {
       var d = devices[i];
+      var r = sr(d) * 1.3;
       var dx = mx - sx(d.x), dy = my - sy(d.y);
       if (dx * dx + dy * dy < r * r) return d;
     }
@@ -335,7 +383,7 @@
     if (mode.startsWith('add_')) {
       var type = mode.replace('add_', '');
       var cfg = TYPES[type];
-      var dev = { id: uid(), type: type, name: cfg ? cfg.name : type, ip: '',
+      var dev = { id: uid(), type: type, name: cfg ? cfg.name : type, ip: '', size: 1.0,
         x: Math.max(DEV_R, Math.min(REF_W - DEV_R, snapToGrid(ux(p.x)))),
         y: Math.max(DEV_R, Math.min(REF_H - DEV_R, snapToGrid(uy(p.y)))) };
       devices.push(dev);
@@ -356,7 +404,6 @@
           selectedId = hit.id;
           if (onSelectCb) onSelectCb(hit);
         } else if (hit.id === connectFromId) {
-          // Clicked same device — cancel connection attempt
           connectFromId = null;
         } else {
           var exists = connections.some(function (c) {
@@ -376,7 +423,7 @@
     if (mode === 'delete') {
       var hitDev = hitDevice(p.x, p.y);
       if (hitDev) {
-        if (hitDev.type === 'hub_center') return; // Hub cannot be deleted
+        if (hitDev.type === 'hub_center') return;
         devices = devices.filter(function (d) { return d.id !== hitDev.id; });
         connections = connections.filter(function (c) { return c.from !== hitDev.id && c.to !== hitDev.id; });
         if (selectedId === hitDev.id) { selectedId = null; if (onSelectCb) onSelectCb(null); }
@@ -392,7 +439,18 @@
       return;
     }
 
-    // Select mode
+    // Select mode — check resize handle first
+    var resizeHit = hitResizeHandle(p.x, p.y);
+    if (resizeHit) {
+      resizing = true;
+      resizeId = resizeHit.id;
+      capturedPointerId = e.pointerId;
+      canvas.setPointerCapture(e.pointerId);
+      canvas.style.cursor = 'nwse-resize';
+      return;
+    }
+
+    // Select mode — device hit
     var sel = hitDevice(p.x, p.y);
     if (sel) {
       selectedId = sel.id;
@@ -414,22 +472,56 @@
     if (!canvas) return;
     var p = getPos(e);
     mouseX = p.x; mouseY = p.y;
-    if (dragging && dragId) {
-      var dev = findDev(dragId);
+
+    // Resizing
+    if (resizing && resizeId) {
+      var dev = findDev(resizeId);
       if (dev) {
-        var rawX = ux(p.x - dragOX);
-        var rawY = uy(p.y - dragOY);
-        dev.x = Math.max(DEV_R, Math.min(REF_W - DEV_R, snapToGrid(rawX)));
-        dev.y = Math.max(DEV_R, Math.min(REF_H - DEV_R, snapToGrid(rawY)));
+        var cx = sx(dev.x), cy = sy(dev.y);
+        var dist = Math.hypot(p.x - cx, p.y - cy);
+        var baseR = DEV_R * ((canvas._logicalW || canvas.width) / REF_W);
+        var newSize = dist / baseR;
+        dev.size = Math.round(Math.max(SIZE_MIN, Math.min(SIZE_MAX, newSize)) * 10) / 10;
+        if (onSelectCb) onSelectCb(dev);
       }
       render();
       return;
     }
+
+    // Dragging
+    if (dragging && dragId) {
+      var devD = findDev(dragId);
+      if (devD) {
+        var rawX = ux(p.x - dragOX);
+        var rawY = uy(p.y - dragOY);
+        devD.x = Math.max(DEV_R, Math.min(REF_W - DEV_R, snapToGrid(rawX)));
+        devD.y = Math.max(DEV_R, Math.min(REF_H - DEV_R, snapToGrid(rawY)));
+      }
+      render();
+      return;
+    }
+
+    // Cursor hint for resize handle
+    if (mode === 'select' && !dragging && !resizing) {
+      var rh = hitResizeHandle(p.x, p.y);
+      canvas.style.cursor = rh ? 'nwse-resize' : 'default';
+    }
+
     if (mode === 'connect' && connectFromId) render();
   }
 
   function onUp(e) {
     if (!canvas) return;
+    if (resizing && resizeId) {
+      if (capturedPointerId !== null) {
+        try { canvas.releasePointerCapture(capturedPointerId); } catch (_) {}
+        capturedPointerId = null;
+      }
+      canvas.style.cursor = 'default';
+      resizing = false;
+      resizeId = null;
+      return;
+    }
     if (dragging && dragId) {
       if (onSelectCb) {
         var dev = findDev(dragId);
@@ -454,6 +546,8 @@
   function setMode(m) {
     mode = m;
     connectFromId = null;
+    resizing = false;
+    resizeId = null;
     if (canvas) canvas.style.cursor = m === 'select' ? 'default' : 'crosshair';
     updateToolbar();
     if (canvas) render();
@@ -466,6 +560,7 @@
     if (props.ip !== undefined) dev.ip = props.ip;
     if (props.target_index !== undefined) dev.target_index = props.target_index;
     if (props.type !== undefined && dev.type !== 'hub_center') dev.type = props.type;
+    if (props.size !== undefined) dev.size = Math.max(SIZE_MIN, Math.min(SIZE_MAX, props.size));
     render();
   }
 
@@ -487,6 +582,8 @@
     connectFromId = null;
     dragging = false;
     dragId = null;
+    resizing = false;
+    resizeId = null;
   }
 
   window.topoEditor = {

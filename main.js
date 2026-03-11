@@ -609,9 +609,7 @@ function startCapture() {
       if (Object.keys(trafficStats).length > 0) {
         safeSend('traffic-stats', trafficStats);
       }
-      if (Object.keys(interNodeStats).length > 0) {
-        safeSend('internode-stats', Object.values(interNodeStats));
-      }
+      safeSend('internode-stats', Object.values(interNodeStats));
       // Merge current discoveredStats into persistent tracker
       const now = Date.now();
       for (const [ip, data] of Object.entries(discoveredStats)) {

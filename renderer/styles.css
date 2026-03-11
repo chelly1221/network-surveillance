@@ -1086,9 +1086,10 @@ tr.log-recovery:hover {
    TOPOLOGY EDITOR MODAL
    ============================================================ */
 .topo-modal {
-  width: 860px;
+  width: calc(100vw - 32px);
   max-width: calc(100vw - 32px);
-  max-height: 85vh;
+  height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px);
 }
 
 .topo-toolbar {
@@ -1155,7 +1156,7 @@ tr.log-recovery:hover {
 
 .topo-canvas-wrap {
   flex: 1;
-  min-height: 340px;
+  min-height: 0;
   position: relative;
   overflow: hidden;
   background: #f8f9fb;

@@ -16,11 +16,17 @@
   let resizeObs = null;
   let listEl = null;
 
+  // Traffic flow state
+  let interNodeData = [];   // [{ src, dst, bytes, packets }]
+  let animRunning = false;
+  let pathCache = {};
+  let adjList = null;
+
   const REF_W = 800, REF_H = 500;
-  const DEV_R = 22;
+  const DEV_R = 14;
 
   const TYPES = {
-    hub_center: { name: '\uAC10\uC2DC\uC13C\uD130', fill: '#e0f7fa', stroke: '#00bcd4' },
+    hub_center: { name: '\uB124\uD2B8\uC6CC\uD06C \uAC10\uC2DCPC', fill: '#e0f7fa', stroke: '#00bcd4' },
     router:     { name: '\uB77C\uC6B0\uD130',   fill: '#fff3e0', stroke: '#e67e22' },
     switch:     { name: '\uC2A4\uC704\uCE58',   fill: '#e8f5e9', stroke: '#4caf50' },
     pc:         { name: 'PC',       fill: '#e3f2fd', stroke: '#a60739' },
@@ -71,11 +77,13 @@
 
   function dispose() {
     active = false;
+    animRunning = false;
     if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
     if (resizeObs) { resizeObs.disconnect(); resizeObs = null; }
     canvas = null;
     ctx = null;
     listEl = null;
+    interNodeData = [];
   }
 
   function resize() {
@@ -97,11 +105,15 @@
   // Override scale helpers to use logical size
   function sxL(v) { return v / REF_W * (canvas._logicalW || canvas.width); }
   function syL(v) { return v / REF_H * (canvas._logicalH || canvas.height); }
-  function srL() { return DEV_R * ((canvas._logicalW || canvas.width) / REF_W); }
+  function srL(dev) {
+    var s = dev ? (dev.size || 1.0) : 1.0;
+    return DEV_R * s * ((canvas._logicalW || canvas.width) / REF_W);
+  }
 
   function setTargets(t, map) {
     targets = t || [];
     ipMap = map || {};
+    nodeStatus = {};
     rebuildFromTopology();
     scheduleRender();
   }
@@ -113,6 +125,8 @@
   }
 
   function rebuildFromTopology() {
+    pathCache = {};
+    adjList = null;
     if (topology && topology.devices && topology.devices.length > 0) {
       devices = JSON.parse(JSON.stringify(topology.devices));
       connections = JSON.parse(JSON.stringify(topology.connections || []));
@@ -122,7 +136,7 @@
   }
 
   function autoGenerate() {
-    devices = [{ id: 'dev_hub', type: 'hub_center', name: '\uAC10\uC2DC\uC13C\uD130', ip: '', x: REF_W / 2, y: REF_H / 2 }];
+    devices = [{ id: 'dev_hub', type: 'hub_center', name: '\uB124\uD2B8\uC6CC\uD06C \uAC10\uC2DCPC', ip: '', x: REF_W / 2, y: REF_H / 2 }];
     connections = [];
     const activeTargets = [];
     (targets || []).forEach(function (t, i) {
@@ -154,7 +168,10 @@
     // Connections
     for (let ci = 0; ci < connections.length; ci++) drawConn(connections[ci]);
 
-    // Devices
+    // Traffic flow particles
+    renderTrafficFlows();
+
+    // Devices (drawn on top of flow lines)
     for (let di = 0; di < devices.length; di++) drawDev(devices[di]);
 
     // Empty state
@@ -192,11 +209,16 @@
 
   function drawDev(dev) {
     const cfg = TYPES[dev.type] || TYPES.pc;
-    const x = sxL(dev.x), y = syL(dev.y), r = srL();
+    const x = sxL(dev.x), y = syL(dev.y), r = srL(dev);
 
     const statusColor = getDeviceStatusColor(dev);
     const strokeColor = statusColor || cfg.stroke;
     const fillColor = statusColor ? hexWithAlpha(statusColor, 0.18) : cfg.fill;
+
+    // Draw opaque white background to prevent shadow glow bleed from other devices
+    ctx.fillStyle = '#ffffff';
+    drawDevShape(dev.type, x, y, r);
+    ctx.fill();
 
     ctx.save();
 
@@ -270,7 +292,8 @@
     }
 
     // Labels
-    const fs = Math.max(10, 11 * (canvas._logicalW) / REF_W);
+    const devSize = dev.size || 1.0;
+    const fs = Math.max(9, 10 * devSize * (canvas._logicalW) / REF_W);
     ctx.textAlign = 'center';
 
     // Name
@@ -281,19 +304,45 @@
     // IP
     if (dev.ip) {
       ctx.fillStyle = '#6b7694';
-      ctx.font = Math.max(8, 9 * (canvas._logicalW) / REF_W).toFixed(0) + 'px Consolas, monospace';
-      ctx.fillText(dev.ip, x, y + r + fs + 14);
+      ctx.font = Math.max(7, 8 * devSize * (canvas._logicalW) / REF_W).toFixed(0) + 'px Consolas, monospace';
+      ctx.fillText(dev.ip, x, y + r + fs + 12);
     }
 
-    // Status text
+    // Status text (only for enabled targets)
     if (dev.target_index !== undefined && dev.target_index !== null) {
-      const st = nodeStatus[dev.target_index];
-      if (st) {
-        const stFs = Math.max(8, 9 * (canvas._logicalW) / REF_W);
-        ctx.font = '700 ' + stFs.toFixed(0) + 'px Pretendard, sans-serif';
-        ctx.fillStyle = st.status === '\uC7A5\uC560' ? '#c0392b' : '#27ae60';
-        ctx.fillText(st.status, x, y + r + fs + 26);
+      const t = targets[dev.target_index];
+      if (t && t.enabled) {
+        const st = nodeStatus[dev.target_index];
+        if (st) {
+          const stFs = Math.max(7, 8 * devSize * (canvas._logicalW) / REF_W);
+          ctx.font = '700 ' + stFs.toFixed(0) + 'px Pretendard, sans-serif';
+          ctx.fillStyle = st.status === '\uC7A5\uC560' ? '#c0392b' : '#27ae60';
+          ctx.fillText(st.status, x, y + r + fs + 26);
+        }
       }
+    }
+  }
+
+  // Trace device shape path (for white background fill)
+  function drawDevShape(type, x, y, r) {
+    switch (type) {
+      case 'hub_center':
+        ctx.beginPath();
+        ctx.moveTo(x, y - r * 1.2); ctx.lineTo(x + r * 1.2, y);
+        ctx.lineTo(x, y + r * 1.2); ctx.lineTo(x - r * 1.2, y);
+        ctx.closePath();
+        break;
+      case 'router':
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+        break;
+      case 'switch':
+        rRect(x - r * 1.1, y - r * 0.6, r * 2.2, r * 1.2, 4);
+        break;
+      case 'server':
+        rRect(x - r * 0.65, y - r, r * 1.3, r * 2, 3);
+        break;
+      default: // pc
+        rRect(x - r * 0.9, y - r * 0.65, r * 1.8, r * 1.1, 3);
     }
   }
 
@@ -316,6 +365,7 @@
 
   // ===== Batched Rendering =====
   function scheduleRender() {
+    if (animRunning) return; // animation loop handles rendering
     if (animFrame) return;
     animFrame = requestAnimationFrame(() => {
       animFrame = null;
@@ -342,6 +392,7 @@
       .sort((a, b) => b.totalBytes - a.totalBytes);
 
     renderDiscoveredList();
+    ensureAnimation();
   }
 
   function renderDiscoveredList() {
@@ -377,9 +428,192 @@
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  // Passthrough handlers (no-op for traffic data in 2D mode)
+  // ===== Traffic Flow Animation =====
+
+  function handleInterNodeStats(data) {
+    interNodeData = data || [];
+    ensureAnimation();
+  }
+
+  function hasActiveFlows() {
+    if (interNodeData.length > 0) return true;
+    for (let i = 0; i < discoveredNodes.length; i++) {
+      if (discoveredNodes[i].connections && Object.keys(discoveredNodes[i].connections).length > 0) return true;
+    }
+    return false;
+  }
+
+  function ensureAnimation() {
+    if (hasActiveFlows() && !animRunning && active) {
+      animRunning = true;
+      if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+      animFrame = requestAnimationFrame(animTick);
+    }
+  }
+
+  function animTick(now) {
+    if (!animRunning || !active || !ctx) {
+      animRunning = false;
+      animFrame = null;
+      return;
+    }
+    render();
+    if (hasActiveFlows()) {
+      animFrame = requestAnimationFrame(animTick);
+    } else {
+      animRunning = false;
+      animFrame = null;
+    }
+  }
+
+  // ===== Graph Shortest Path (BFS) =====
+
+  function buildAdjListIfNeeded() {
+    if (adjList) return;
+    adjList = {};
+    for (let i = 0; i < devices.length; i++) adjList[devices[i].id] = [];
+    for (let i = 0; i < connections.length; i++) {
+      const c = connections[i];
+      if (adjList[c.from]) adjList[c.from].push(c.to);
+      if (adjList[c.to]) adjList[c.to].push(c.from);
+    }
+  }
+
+  function findPath(fromId, toId) {
+    if (fromId === toId) return null;
+    const key = fromId + '|' + toId;
+    if (key in pathCache) return pathCache[key];
+    buildAdjListIfNeeded();
+
+    const visited = {};
+    visited[fromId] = true;
+    const queue = [[fromId]];
+    while (queue.length > 0) {
+      const path = queue.shift();
+      const node = path[path.length - 1];
+      if (node === toId) {
+        pathCache[key] = path;
+        return path;
+      }
+      const neighbors = adjList[node];
+      if (!neighbors) continue;
+      for (let i = 0; i < neighbors.length; i++) {
+        if (!visited[neighbors[i]]) {
+          visited[neighbors[i]] = true;
+          queue.push(path.concat(neighbors[i]));
+        }
+      }
+    }
+    pathCache[key] = null;
+    return null;
+  }
+
+  // ===== Traffic Flow Rendering =====
+
+  function renderTrafficFlows() {
+    if (!hasActiveFlows()) return;
+    const t = performance.now() / 1000;
+
+    // Build IP -> device map
+    const ipToDev = {};
+    for (let i = 0; i < devices.length; i++) {
+      if (devices[i].ip) ipToDev[devices[i].ip] = devices[i];
+    }
+    // Map localIp to hub_center
+    const hubDev = devices.find(function (d) { return d.type === 'hub_center'; });
+    if (localIp && hubDev) ipToDev[localIp] = hubDev;
+
+    // 1. Inter-node flows (registered device ↔ registered device)
+    for (let i = 0; i < interNodeData.length; i++) {
+      const flow = interNodeData[i];
+      const srcDev = ipToDev[flow.src];
+      const dstDev = ipToDev[flow.dst];
+      if (!srcDev || !dstDev) continue;
+      // Skip flows involving hub_center
+      if (srcDev.type === 'hub_center' || dstDev.type === 'hub_center') continue;
+
+      const path = findPath(srcDev.id, dstDev.id);
+      if (!path || path.length < 2) continue;
+
+      var count = Math.max(1, Math.min(5, Math.ceil(Math.log2(flow.bytes / 500 + 1))));
+      var speed = 0.4;
+
+      for (let p = 0; p < count; p++) {
+        var phase = ((t * speed + p / count) % 1 + 1) % 1;
+        drawPathParticle(path, phase, 'rgba(52, 152, 219, 0.85)', Math.min(4, 2 + flow.bytes / 30000));
+      }
+    }
+
+    // 2. Discovered node flows (external → registered device)
+    for (let i = 0; i < discoveredNodes.length; i++) {
+      const node = discoveredNodes[i];
+      if (!node.connections) continue;
+      const entries = Object.entries(node.connections);
+      for (let j = 0; j < entries.length; j++) {
+        const targetIp = entries[j][0];
+        const conn = entries[j][1];
+        const targetDev = ipToDev[targetIp];
+        if (!targetDev || targetDev.type === 'hub_center') continue;
+
+        var dCount = Math.max(1, Math.min(3, Math.ceil(Math.log2(conn.bytes / 2000 + 1))));
+        var dSpeed = 0.5;
+        var angle = simpleHash(node.ip) % 628 / 100; // 0 ~ 6.28 radians
+
+        for (let p = 0; p < dCount; p++) {
+          var dPhase = ((t * dSpeed + p / dCount) % 1 + 1) % 1;
+          drawExternalParticle(targetDev, dPhase, angle, 'rgba(156, 39, 176, 0.75)');
+        }
+      }
+    }
+  }
+
+  function drawPathParticle(pathIds, phase, color, size) {
+    const segments = pathIds.length - 1;
+    const pos = phase * segments;
+    const segIdx = Math.min(Math.floor(pos), segments - 1);
+    const segT = pos - segIdx;
+
+    const from = findDev(pathIds[segIdx]);
+    const to = findDev(pathIds[segIdx + 1]);
+    if (!from || !to) return;
+
+    const x = sxL(from.x + (to.x - from.x) * segT);
+    const y = syL(from.y + (to.y - from.y) * segT);
+    const r = Math.max(2, size);
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function drawExternalParticle(dev, phase, angle, color) {
+    const tx = sxL(dev.x), ty = syL(dev.y);
+    const dist = srL(dev) * 5;
+    // Outer start point
+    const ox = tx + Math.cos(angle) * dist;
+    const oy = ty + Math.sin(angle) * dist;
+
+    // phase 0 = outer, phase 1 = at device
+    const x = ox + (tx - ox) * phase;
+    const y = oy + (ty - oy) * phase;
+
+    ctx.beginPath();
+    ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  function simpleHash(str) {
+    var h = 0;
+    for (var i = 0; i < str.length; i++) {
+      h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+    }
+    return Math.abs(h);
+  }
+
+  // Passthrough handlers (no-op for unused traffic data)
   function handleTrafficStats() {}
-  function handleInterNodeStats() {}
   function handleAsterixFlows() {}
 
   // ===== Export =====
